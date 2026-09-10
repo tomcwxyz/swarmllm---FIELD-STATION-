@@ -1,0 +1,36 @@
+/* FIELD STATION · COLLECTIVE COMPUTE · entry flow
+   The protected invitation link is the join mechanism. Internal room credentials stay hidden. */
+[hidden]{display:none!important}
+
+.join-fields{grid-template-columns:1fr}
+.join-fields input{max-width:32rem}
+
+.entry-notice{
+  margin-top:var(--fs-space-6);
+  padding:var(--fs-space-4) 0 var(--fs-space-6);
+  border-top:1px solid var(--fs-signal-orange);
+  border-bottom:var(--fs-border);
+}
+.entry-notice .fs-type{color:var(--fs-signal-orange)}
+.entry-notice p{
+  max-width:62ch;
+  margin-top:var(--fs-space-3);
+  color:var(--fs-muted);
+  font-size:var(--fs-text-sm);
+  line-height:1.6;
+}
+.entry-notice strong{color:var(--fs-ink)}
+.entry-action-note{
+  margin-top:var(--fs-space-3);
+  color:var(--fs-muted);
+  font:400 var(--fs-text-xs)/1.45 var(--fs-font-mono);
+}
+body[data-entry="invite"] .join-card{border-top-color:var(--fs-accent)}
+body[data-entry="invite"] #entry-type{color:var(--fs-accent)}
+body[data-entry="invite"] #join-status[data-tone="ok"]::before{content:"● ";font-size:.7em}
+
+@media(max-width:620px){
+  .entry-notice{margin-top:var(--fs-space-4)}
+  .join-actions button{width:100%}
+  .entry-action-note{max-width:42ch}
+}
