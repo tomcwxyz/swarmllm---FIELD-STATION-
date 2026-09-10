@@ -13,5 +13,6 @@ function setTheme(theme) {
 
 let saved = null;
 try { saved = localStorage.getItem(key); } catch {}
-setTheme(saved === "light" ? "light" : "dark");
+// The FIELD STATION public surface is light by default; dark is a deliberate alternate.
+setTheme(saved === "dark" ? "dark" : "light");
 toggle?.addEventListener("click", () => setTheme(root.dataset.theme === "dark" ? "light" : "dark"));
