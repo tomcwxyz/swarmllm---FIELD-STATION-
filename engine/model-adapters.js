@@ -1,8 +1,9 @@
 // Architecture adapters for GGUF-backed models.
 //
 // Keep model-family knowledge out of the room orchestration. An adapter answers:
-// what architecture is this, can FIELD STATION execute it, and what runtime config
-// can be derived from the GGUF metadata/tensor index without fetching config.json.
+// what architecture is this, can FIELD STATION execute it, what runtime config
+// can be derived from the GGUF metadata/tensor index, and how a conversation is
+// represented to the model.
 
 import { GGML_EMBED, ggmlLayerNames } from "./gguf.js";
 
@@ -80,6 +81,58 @@ export function denseConfigFromGGUF(G) {
   return cfg;
 }
 
+function tokenId(vocab, name, requiredToken = true) {
+  const id = vocab?.[name];
+  if (Number.isInteger(id)) return id;
+  if (requiredToken) throw new Error(`chat special token ${name} is missing`);
+  return null;
+}
+
+/**
+ * Runtime conversation formatter used by field-station/conversation.js and the
+ * generation stop condition. It deliberately exposes token-id operations rather
+ * than templates/Jinja so the distributed loop stays deterministic and small.
+ */
+export function chatRuntimeForStyle(style, tok) {
+  if (!tok?.vocab || typeof tok.encode !== "function") throw new Error("model tokenizer is not ready");
+  const vocab = tok.vocab;
+
+  if (style === "chatml-qwen") {
+    const imStart = tokenId(vocab, "<|im_start|>");
+    const imEnd = tokenId(vocab, "<|im_end|>");
+    const eot = tokenId(vocab, "<|endoftext|>", false);
+    const think = tokenId(vocab, "<think>", false);
+    const thinkEnd = tokenId(vocab, "</think>", false);
+    const stopTokens = new Set([imEnd, eot].filter(Number.isInteger));
+
+    return Object.freeze({
+      id: "chatml-qwen",
+      encodeMessage(role, content) {
+        return [imStart, ...tok.encode(`${role}\n${content ?? ""}`), imEnd, ...tok.encode("\n")];
+      },
+      assistantPrefix() {
+        const ids = [imStart, ...tok.encode("assistant\n")];
+        // Qwen3 thinking models default to a visible reasoning block. FIELD STATION has
+        // always pre-closed it so the room displays the answer rather than model scratchwork.
+        if (Number.isInteger(think) && Number.isInteger(thinkEnd))
+          ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
+        return ids;
+      },
+      stopTokens,
+      isStop(token) { return stopTokens.has(token); },
+    });
+  }
+
+  throw new Error(`FIELD STATION chat style ${style || "unknown"} is not implemented`);
+}
+
+/** Resolve the GGUF architecture then construct its conversation formatter. */
+export function chatRuntimeFromGGUF(G, tok) {
+  const adapter = resolveGGUFAdapter(G);
+  if (!adapter) throw new Error(`GGUF architecture ${normaliseGGUFArchitecture(G?.meta?.["general.architecture"])} has no FIELD STATION adapter`);
+  return chatRuntimeForStyle(adapter.promptStyle, tok);
+}
+
 /**
  * Small, explicit adapter contract. Planned entries are visible so capability
  * preflight can distinguish "architecture work" from an unknown model family.
@@ -103,7 +156,7 @@ export const MODEL_ADAPTERS = Object.freeze({
     status: "supported",
     promptStyle: "chatml-qwen",
   }),
-  llama: Object.freeze({ id: "llama-dense", architecture: "llama", engine: "dense", status: "planned", promptStyle: "model-template" }),
+  llama: Object.freeze({ id: "llama-dense", architecture: "llama", metaPrefix: "llama", engine: "dense", status: "planned", promptStyle: "llama3-header" }),
   gemma: Object.freeze({ id: "gemma-dense", architecture: "gemma", engine: "dense", status: "planned", promptStyle: "model-template" }),
   gemma2: Object.freeze({ id: "gemma2-dense", architecture: "gemma2", engine: "dense", status: "planned", promptStyle: "model-template" }),
   gemma3: Object.freeze({ id: "gemma3-dense", architecture: "gemma3", engine: "dense", status: "planned", promptStyle: "model-template" }),
