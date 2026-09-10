@@ -27,6 +27,11 @@ function normaliseModelURL(raw) {
   return url.toString();
 }
 
+function isRunnableReport(report) {
+  return ["qwen3", "llama"].includes(report?.architecture)
+    && (report.status === "supported" || report.status === "supported-with-conversion");
+}
+
 async function fetchGGUFHeaderForInspection(url) {
   let size = 12 * MIB;
   for (;;) {
@@ -49,7 +54,12 @@ async function fetchGGUFHeaderForInspection(url) {
 }
 
 function statusCopy(report) {
-  if (report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion")) {
+  if (isRunnableReport(report)) {
+    if (report.architecture === "llama") {
+      return report.status === "supported"
+        ? "COMPATIBLE / current Llama 3 dense adapter"
+        : "COMPATIBLE / Llama dense adapter + conversion path";
+    }
     return report.status === "supported"
       ? "COMPATIBLE / current Qwen3 dense adapter"
       : "COMPATIBLE / conversion path required";
@@ -63,7 +73,7 @@ function renderReport(result) {
   const reportEl = $("model-report");
   if (!reportEl) return;
   const { report, headerBytesFetched } = result;
-  const useable = report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion");
+  const useable = isRunnableReport(report);
   reportEl.dataset.tone = useable ? "ok" : report.status === "architecture-needed" || report.status === "integration-needed" ? "warn" : "bad";
 
   const types = report.tensorTypes.map((t) => `${t.name} × ${t.count}${t.status === "supported-with-conversion" ? " → Q8" : ""}`).join(" · ");
@@ -108,8 +118,8 @@ async function inspectModel() {
     const { G, headerBytesFetched } = await fetchGGUFHeaderForInspection(url);
     const report = inspectGGUFCompatibility(G);
     // Run the actual adapter config validation too. A header can have the right architecture
-    // label while still omitting dimensions the current DenseEngine needs.
-    if (report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion")) {
+    // label while still omitting dimensions or architecture features DenseEngine needs.
+    if (isRunnableReport(report)) {
       try { denseConfigFromGGUF(G); }
       catch (error) {
         report.status = "unsupported";
@@ -137,8 +147,7 @@ async function inspectModel() {
 function useInspectedModel() {
   if (!inspected) return;
   const { url, G, report } = inspected;
-  const useable = report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion");
-  if (!useable) return;
+  if (!isRunnableReport(report)) return;
 
   const key = "field-custom-gguf";
   const name = G.meta["general.name"] || filenameFromURL(url);
