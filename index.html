@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en-GB">
+<html lang="en-GB" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="A FIELD STATION experiment in collective compute: can several ordinary devices become one AI computer?">
+<link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/field-station.css">
@@ -11,42 +12,43 @@
 </head>
 <body>
 <div class="landing">
-  <header class="landing-header">
-    <a class="fs-wordmark" href="/"><span>FIELD</span><span class="slash">/</span><span>STATION</span></a>
-    <span class="fs-label">experiment</span>
+  <header class="shell-header">
+    <a class="fs-wordmark" href="/">FIELD STATION <span class="fs-mark">· COLLECTIVE COMPUTE</span></a>
     <span class="spacer"></span>
-    <a class="source" href="https://github.com/tomcwxyz/swarmllm---FIELD-STATION-" rel="noopener">source ↗</a>
+    <a class="source" href="https://github.com/tomcwxyz/swarmllm---FIELD-STATION-" rel="noopener">Source ↗</a>
+    <button id="theme-toggle" class="fs-theme-toggle" type="button">Light</button>
   </header>
 
   <main class="landing-main">
     <section class="landing-copy">
-      <div class="fs-label">Collective compute</div>
-      <h1>What if the computer was <em>the room?</em></h1>
-      <p class="lede">This experiment pools the spare computing power in ordinary phones, laptops and tablets. Together they run a single AI model that is divided between the participating devices.</p>
+      <div class="fs-type">EXPERIMENT · DISTRIBUTED INFERENCE</div>
+      <h1><span class="lo">What if the computer was</span> <strong>the room?</strong></h1>
+      <p class="lede">We are testing whether ordinary phones, laptops and tablets can pool their spare computing capacity and run a single AI model together. Each device holds part of the model; the room becomes the computer.</p>
       <div class="landing-actions">
-        <a class="fs-button" href="/room">Run the experiment <span>→</span></a>
-        <a class="fs-button secondary" href="#what">What happens?</a>
+        <a class="fs-btn fs-btn--primary" href="/room">Run the experiment →</a>
+        <a class="fs-btn" href="#apparatus">See the apparatus ↓</a>
       </div>
     </section>
 
-    <aside class="experiment-card" id="what">
-      <div class="number">FIELD TEST / 01</div>
+    <aside class="experiment-card" id="apparatus">
+      <div class="number">FIELD TEST · COLLECTIVE COMPUTE</div>
       <h2>One model. Several devices.</h2>
-      <p>There is no model API in the middle. Each browser downloads part of the model, computes its layers locally with WebGPU, then passes intermediate activations to the next device over WebRTC.</p>
-      <div class="fs-warning fs-note"><strong>Nothing you type should be private.</strong> Other devices in the experiment participate in the computation, and activations should be treated as recoverable by participants.</div>
+      <p>There is no model API doing the inference in the middle. Each browser downloads only its assigned model layers, computes them locally with WebGPU, then passes intermediate activations to the next participating device over WebRTC.</p>
+      <div class="fs-warning"><strong>Nothing entered here should be private.</strong> Participating devices are part of the computation, and model activations should be treated as potentially recoverable by participants.</div>
       <dl>
         <dt>Bring</dt><dd>2+ modern devices</dd>
-        <dt>Needs</dt><dd>WebGPU + a decent network</dd>
-        <dt>Costs</dt><dd>GPU, memory, bandwidth + battery</dd>
-        <dt>Built on</dt><dd>SwarmLLM</dd>
+        <dt>Runtime</dt><dd>WebGPU + WebRTC</dd>
+        <dt>Weights</dt><dd>Downloaded directly from Hugging Face</dd>
+        <dt>Built on</dt><dd>SwarmLLM · MIT</dd>
       </dl>
     </aside>
   </main>
 
   <footer class="landing-footer">
-    <span>FIELD STATION · experiments in technology, work and collective capacity</span>
-    <span>Forked from SwarmLLM · MIT licensed</span>
+    <span>FIELD STATION · FUTURE WORK / TECHNOLOGY / SOCIETY</span>
+    <span class="signal-line">Live experiment surface</span>
   </footer>
 </div>
+<script src="/field-station-shell.js"></script>
 </body>
 </html>
