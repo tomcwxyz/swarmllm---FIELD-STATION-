@@ -67,7 +67,8 @@ Every architecture × quantisation combination needs deterministic reference evi
 - [x] Add a model capability registry / GGUF header inspector.
 - [x] Add no-GPU unit coverage for Q4_K layout and architecture-vs-quant verdicts.
 - [x] Wire Q4_K into the FIELD STATION distributable `engine/gguf.js` at build time, preserving the upstream source file while eligible 2D tensors take the existing requant-to-Q8 path.
-- [ ] Validate a real Qwen3 `Q4_K_M` GGUF against llama.cpp and add a golden.
+- [x] Add a small Qwen3 0.6B `Q4_K_M` model to the room as an explicitly experimental field test.
+- [ ] Validate that real Qwen3 `Q4_K_M` GGUF end-to-end against llama.cpp and add a golden.
 - [ ] Surface the preflight report in the room model picker.
 
 ## Done when
