@@ -1,6 +1,23 @@
 {
   "framework": null,
   "trailingSlash": false,
-  "rewrites": [{ "source": "/room", "destination": "/p2p.html" }],
-  "redirects": [{ "source": "/p2p.html", "destination": "/room", "permanent": false }]
+  "installCommand": "npm install --omit=dev --package-lock=false --ignore-scripts",
+  "buildCommand": "npm run build:field",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/room", "destination": "/field-room.html" }
+  ],
+  "redirects": [
+    { "source": "/p2p.html", "destination": "/room", "permanent": false }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    }
+  ]
 }

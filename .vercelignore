@@ -9,9 +9,8 @@ docs
 presentation
 .github
 node_modules
-scripts
 *.md
-package.json
 CITATION.cff
 AUTHORS
 LICENSE
+dist

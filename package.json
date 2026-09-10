@@ -1,31 +1,37 @@
 {
-  "name": "swarmllm",
-  "version": "0.2.0",
-  "description": "Peer-to-peer LLM inference across browser tabs: a from-scratch WebGPU engine and a WebRTC runtime that split one model over the devices in a room.",
-  "homepage": "https://swarmllm.ai",
+  "name": "swarmllm-field-station",
+  "version": "0.2.0-field.1",
+  "description": "FIELD STATION experiment: collective browser inference built on SwarmLLM.",
+  "homepage": "https://github.com/tomcwxyz/swarmllm---FIELD-STATION-",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nehanth/swarmllm.git"
+    "url": "https://github.com/tomcwxyz/swarmllm---FIELD-STATION-.git"
   },
   "license": "MIT",
-  "author": "Nehanth Narendrula",
+  "author": "Nehanth Narendrula; FIELD STATION adaptation by Tom Watson",
   "type": "module",
   "private": true,
   "scripts": {
     "test": "deno test --allow-read tests/unit",
-    "check": "deno check engine/*.js && node --check tests/*.js benchmarks/*.js",
+    "check": "deno check engine/*.js field-station/*.js field-station-room.js && node --check tests/*.js benchmarks/*.js scripts/build-field.mjs",
     "test:gpu": "tests/run.sh quick",
     "test:q38": "tests/run.sh q38",
     "test:all": "tests/run.sh all",
     "bench": "deno run --unstable-webgpu --allow-read --allow-env benchmarks/bench.js",
     "bench:q38": "MODEL=q38 deno run --unstable-webgpu --allow-read --allow-env benchmarks/bench.js",
     "bench:breakdown": "deno run --unstable-webgpu --allow-read --allow-env benchmarks/bench_breakdown.js",
+    "build:field": "node scripts/build-field.mjs",
     "serve": "npx -y serve -l 8080 .",
+    "serve:field": "npm run build:field && npx -y serve -l 8080 dist",
+    "signal": "peerjs --port 9000 --path /",
     "deploy:staging": "scripts/deploy-staging.sh",
     "e2e": "node tests/e2e/room.mjs"
   },
   "engines": {
     "deno": ">=2.0"
+  },
+  "dependencies": {
+    "peerjs": "1.5.4"
   },
   "devDependencies": {
     "peer": "^1.0.2",

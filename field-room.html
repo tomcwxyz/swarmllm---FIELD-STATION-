@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="description" content="FIELD STATION experiment: pool several ordinary devices into one local-first AI model runtime.">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/field-station.css">
+<title>Collective compute · FIELD STATION</title>
+<script src="/vendor/peerjs.min.js"></script>
+</head>
+<body class="room-body">
+<header class="room-header">
+  <a class="fs-wordmark" href="/" aria-label="FIELD STATION home"><span>FIELD</span><span class="slash">/</span><span>STATION</span></a>
+  <span class="mode">experiment · collective compute</span>
+  <span class="spacer"></span>
+  <button id="room-badge" type="button" title="Copy protected invitation link"></button>
+</header>
+
+<div id="privacy-strip" role="note">
+  <span class="signal">Public experiment</span>
+  <span><b>Do not enter private or sensitive information.</b> Every participating device helps compute the answer. WebRTC encrypts traffic in transit, but model activations should be treated as visible to room participants.</span>
+</div>
+
+<section id="join-screen">
+  <div class="join-card">
+    <div class="fs-label">Experiment 01 · collective compute</div>
+    <h1>Build one AI from <em>several devices.</em></h1>
+    <p>Your browser contributes some of its GPU memory. Add another laptop, phone or tablet and the model is divided between them.</p>
+
+    <div class="join-fields">
+      <input id="name-input" aria-label="Device name" placeholder="Device name — e.g. Tom’s laptop" maxlength="20" autocomplete="off">
+      <input id="code-input" aria-label="Room code" placeholder="Room code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <div id="key-wrap" hidden>
+        <input id="key-input" aria-label="Invitation key" placeholder="Invitation key" maxlength="32" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <div id="join-pledge">
+      contribute <button class="step" id="gb-minus" type="button" aria-label="Contribute less memory">−</button>
+      <input id="join-gb" aria-label="GPU memory contribution in GB" type="number" min="1" max="64" step="1" value="1" inputmode="decimal">
+      <button class="step" id="gb-plus" type="button" aria-label="Contribute more memory">+</button> GB GPU memory
+    </div>
+
+    <label class="consent">
+      <input id="safety-check" type="checkbox">
+      <span>I understand this is an experiment: prompts are not confidential, other participants are not independently verified, and this may use significant GPU, memory, bandwidth and battery.</span>
+    </label>
+
+    <div class="join-actions">
+      <button id="create-btn" class="primary" type="button">Create experiment room</button>
+      <button id="join-btn" type="button">Join invited room</button>
+    </div>
+    <div class="invite-help">
+      <span>Have a code but no invitation key?</span>
+      <button id="show-key" type="button">enter key manually</button>
+    </div>
+    <div id="join-status" aria-live="polite"></div>
+  </div>
+</section>
+
+<section id="room-screen">
+  <aside id="side">
+    <div id="side-room" title="Copy protected invitation link">
+      <div class="side-k">Experiment room</div>
+      <div id="side-code">----</div>
+      <div class="side-hint">click to copy the full protected invitation</div>
+    </div>
+
+    <div class="side-k">Participating devices</div>
+    <div id="peers"></div>
+
+    <div id="ai-panel">
+      <div class="side-k">Shared model</div>
+      <div id="ai-head">
+        <span id="ai-title">COLLECTIVE MODEL</span>
+        <select id="ai-model" aria-label="Model">
+          <option value="qwen3-0.6b">Qwen3 0.6B · Q8</option>
+          <option value="qwen3-1.7b">Qwen3 1.7B · Q8</option>
+          <option value="qwen3-4b">Qwen3 4B · Q8</option>
+          <option value="qwen3.8-27b">Qwen 3.8 27B · Q4</option>
+          <option value="smollm-135m">SmolLM 135M · bf16</option>
+        </select>
+        <div id="ai-need">
+          <div id="need-bar"><div id="need-fill"></div></div>
+          <div id="need-text">measuring room capacity…</div>
+        </div>
+        <span id="ai-status">split across the participating devices</span>
+        <button id="ai-start" type="button">Start model</button>
+      </div>
+
+      <div id="host-controls" class="host-section" hidden>
+        <label for="ai-visibility">Who sees the rendered chat</label>
+        <select id="ai-visibility" class="host-select">
+          <option value="all">everyone in the room</option>
+          <option value="host">only this host screen</option>
+          <option value="asker">only whoever asked</option>
+        </select>
+        <div class="side-hint">This changes display only. Every device still participates in computation.</div>
+      </div>
+
+      <div id="ai-loading" style="display:none">
+        <div id="ldg-title"></div>
+        <div id="ldg-bar"><div id="ldg-fill"></div></div>
+        <div id="ldg-sub"></div>
+      </div>
+    </div>
+
+    <div id="awake" class="side-hint"></div>
+    <div id="cache-line" class="side-hint"><a href="#" id="cache-clear">clear cached model weights</a></div>
+    <div id="cluster-bar">room: <b id="cluster-summary">—</b></div>
+  </aside>
+
+  <main id="chatpane">
+    <div id="chat-log"></div>
+    <div id="ai-empty">Connect enough devices, choose a model, then start the experiment.</div>
+    <div id="load-card">
+      <div class="lc-k">DISTRIBUTING MODEL <span id="lc-model"></span></div>
+      <div id="lc-rows"></div>
+      <div class="lc-note">Each device fetches only the layers assigned to it.</div>
+    </div>
+    <div id="ai-output"></div>
+    <div id="ai-row">
+      <input id="ai-prompt" aria-label="Prompt" placeholder="Ask the collective model…" autocomplete="off">
+      <button id="ai-send" type="button">Send</button>
+    </div>
+  </main>
+</section>
+
+<div id="toasts" aria-live="polite"></div>
+<script type="module" src="/field-station-room.js"></script>
+</body>
+</html>
