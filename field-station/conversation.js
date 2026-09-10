@@ -3,6 +3,7 @@
 // they do not persist or transmit transcript content beyond the existing room chat flow.
 
 export const FIELD_CONTEXT_RESERVE = 512;
+export const FIELD_LATEST_TURN_RESERVE = 256;
 
 function messageIds(tok, vocab, role, content) {
   const imStart = vocab["<|im_start|>"];
@@ -17,7 +18,8 @@ function messageIds(tok, vocab, role, content) {
 
 /**
  * Build a coherent rolling prompt from complete previous user/assistant turns.
- * Oldest turns fall away first so the current question retains useful answer room.
+ * The immediately preceding turn gets priority so short follow-ups such as "continue"
+ * remain meaningful. Older turns fall away first to retain useful answer room.
  */
 export function buildConversationPrompt({ tok, vocab, history = [], currentText, maxSeq, minRoom = 32, reserve = FIELD_CONTEXT_RESERVE }) {
   const imStart = vocab["<|im_start|>"];
@@ -34,9 +36,11 @@ export function buildConversationPrompt({ tok, vocab, history = [], currentText,
     return { ids: current, usedTurns: 0, droppedTurns: history.length, reserveTokens: Math.max(0, maxSeq - current.length) };
   }
 
-  // Prefer to retain at least `reserve` tokens for the new answer. If the current message itself
-  // is larger than that budget, keep it intact and let the existing hard context guard decide.
+  // Normally reserve 512 tokens for the answer. For the immediately preceding turn, relax
+  // that to 256 tokens when necessary: preserving what the user is referring to is more useful
+  // than forgetting it merely to guarantee a longer response. Older history uses the full reserve.
   const preferredPromptLimit = Math.max(current.length, maxSeq - Math.max(minRoom, reserve));
+  const latestTurnLimit = Math.max(preferredPromptLimit, maxSeq - Math.max(minRoom, FIELD_LATEST_TURN_RESERVE));
   const selected = [];
   let promptLength = current.length;
   let usedTurns = 0;
@@ -47,7 +51,8 @@ export function buildConversationPrompt({ tok, vocab, history = [], currentText,
       ...messageIds(tok, vocab, "user", turn.user || ""),
       ...messageIds(tok, vocab, "assistant", turn.assistant || ""),
     ];
-    if (promptLength + turnIds.length > preferredPromptLimit) break;
+    const limit = usedTurns === 0 ? latestTurnLimit : preferredPromptLimit;
+    if (promptLength + turnIds.length > limit) break;
     selected.unshift(turnIds);
     promptLength += turnIds.length;
     usedTurns++;
