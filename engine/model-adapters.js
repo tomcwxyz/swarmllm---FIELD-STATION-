@@ -30,9 +30,10 @@ function tensorDim(G, name, axis) {
 /**
  * Build the DenseEngine config from a dense GGUF header.
  *
- * Qwen3 is the first implemented adapter. Shape fallbacks are deliberate: some
- * converters omit optional metadata such as attention.key_length even though the
- * exact dimensions are already present in the tensor index.
+ * Qwen3 and Llama 3 share the DenseEngine's RMSNorm + GQA + SwiGLU execution
+ * shape. Shape fallbacks are deliberate: some converters omit optional metadata
+ * such as attention.key_length even though the exact dimensions are already
+ * present in the tensor index.
  */
 export function denseConfigFromGGUF(G) {
   const meta = G?.meta || {};
@@ -52,6 +53,7 @@ export function denseConfigFromGGUF(G) {
   const qRows = tensorDim(G, names.q, 0);
   const kRows = tensorDim(G, names.k, 0);
   const headDim = finitePositive(meta[`${prefix}.attention.key_length`])
+    || finitePositive(meta[`${prefix}.rope.dimension_count`])
     || (kRows && kvHeads ? kRows / kvHeads : null)
     || (qRows && heads ? qRows / heads : null)
     || (hidden && heads ? hidden / heads : null);
@@ -68,7 +70,7 @@ export function denseConfigFromGGUF(G) {
     hidden_size: required(hidden, `${prefix}.embedding_length / embedding tensor width`),
     num_attention_heads: required(heads, `${prefix}.attention.head_count`),
     num_key_value_heads: required(kvHeads, `${prefix}.attention.head_count_kv`),
-    head_dim: required(headDim, `${prefix}.attention.key_length / attention tensor shape`),
+    head_dim: required(headDim, `${prefix}.attention.key_length / rope.dimension_count / attention tensor shape`),
     intermediate_size: required(intermediate, `${prefix}.feed_forward_length / FFN tensor shape`),
     num_hidden_layers: required(meta[`${prefix}.block_count`], `${prefix}.block_count`),
     vocab_size: required(vocab, `${prefix}.vocab_size / embedding tensor rows`),
@@ -107,6 +109,7 @@ export function chatRuntimeForStyle(style, tok) {
 
     return Object.freeze({
       id: "chatml-qwen",
+      conversationPrefix() { return []; },
       encodeMessage(role, content) {
         return [imStart, ...tok.encode(`${role}\n${content ?? ""}`), imEnd, ...tok.encode("\n")];
       },
@@ -117,6 +120,31 @@ export function chatRuntimeForStyle(style, tok) {
         if (Number.isInteger(think) && Number.isInteger(thinkEnd))
           ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
         return ids;
+      },
+      stopTokens,
+      isStop(token) { return stopTokens.has(token); },
+    });
+  }
+
+  if (style === "llama3-header") {
+    const bos = tokenId(vocab, "<|begin_of_text|>");
+    const headerStart = tokenId(vocab, "<|start_header_id|>");
+    const headerEnd = tokenId(vocab, "<|end_header_id|>");
+    const eot = tokenId(vocab, "<|eot_id|>");
+    const eos = tokenId(vocab, "<|end_of_text|>", false);
+    const eom = tokenId(vocab, "<|eom_id|>", false);
+    const stopTokens = new Set([eot, eos, eom].filter(Number.isInteger));
+    const header = (role) => [headerStart, ...tok.encode(String(role || "user")), headerEnd, ...tok.encode("\n\n")];
+
+    return Object.freeze({
+      id: "llama3-header",
+      // Llama 3 uses one BOS token for the whole conversation, not one per turn.
+      conversationPrefix() { return [bos]; },
+      encodeMessage(role, content) {
+        return [...header(role), ...tok.encode(String(content ?? "")), eot];
+      },
+      assistantPrefix() {
+        return header("assistant");
       },
       stopTokens,
       isStop(token) { return stopTokens.has(token); },
@@ -156,7 +184,20 @@ export const MODEL_ADAPTERS = Object.freeze({
     status: "supported",
     promptStyle: "chatml-qwen",
   }),
-  llama: Object.freeze({ id: "llama-dense", architecture: "llama", metaPrefix: "llama", engine: "dense", status: "planned", promptStyle: "llama3-header" }),
+  // Initial Llama support deliberately targets the original Llama 3 dense family.
+  // Llama 3.1/3.2 GGUFs can advertise additional RoPE scaling metadata that the
+  // DenseEngine does not yet implement; those must not be promoted to a built-in
+  // FIELD STATION model until their scaled-RoPE path has reference evidence.
+  llama: Object.freeze({
+    id: "llama-dense",
+    architecture: "llama",
+    metaPrefix: "llama",
+    engine: "dense",
+    status: "supported",
+    promptStyle: "llama3-header",
+    defaultRopeTheta: 500_000,
+    configFromGGUF: denseConfigFromGGUF,
+  }),
   gemma: Object.freeze({ id: "gemma-dense", architecture: "gemma", engine: "dense", status: "planned", promptStyle: "model-template" }),
   gemma2: Object.freeze({ id: "gemma2-dense", architecture: "gemma2", engine: "dense", status: "planned", promptStyle: "model-template" }),
   gemma3: Object.freeze({ id: "gemma3-dense", architecture: "gemma3", engine: "dense", status: "planned", promptStyle: "model-template" }),
