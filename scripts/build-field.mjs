@@ -13,6 +13,7 @@ async function copy(path) {
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(join(dist, "vendor"), { recursive: true });
+await mkdir(join(dist, "room"), { recursive: true });
 
 const peer = JSON.parse(await readFile(peerPackage, "utf8"));
 if (peer.version !== "1.5.4") {
@@ -32,5 +33,8 @@ for (const path of [
   "apple-touch-icon.png",
 ]) await copy(path);
 
+// Make /room a real static route as well as a Vercel rewrite target. This keeps the
+// FIELD STATION build portable to any static host and avoids depending on platform routing.
+await cp(join(root, "field-room.html"), join(dist, "room", "index.html"));
 await cp(peerBundle, join(dist, "vendor", "peerjs.min.js"));
 console.log("FIELD STATION static build created in dist/ with PeerJS 1.5.4 vendored locally.");
