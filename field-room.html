@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/field-station.css">
 <link rel="stylesheet" href="/field-station-entry.css">
+<link rel="stylesheet" href="/field-station-diagnostics.css">
 <title>Collective compute · FIELD STATION</title>
 <script src="/vendor/peerjs.min.js"></script>
 </head>
@@ -115,8 +116,10 @@
       </div>
     </div>
 
+    <div id="context-line" class="side-hint">CONTEXT / new room conversation</div>
     <div id="awake" class="side-hint"></div>
     <div id="cache-line" class="side-hint"><a href="#" id="cache-clear">Clear cached model weights</a></div>
+    <button id="diagnostics-btn" type="button">Diagnostics / logs</button>
     <div id="cluster-bar">ROOM / <b id="cluster-summary">—</b></div>
   </aside>
 
@@ -138,6 +141,7 @@
 
 <div id="toasts" aria-live="polite"></div>
 <script src="/field-station-shell.js"></script>
+<script src="/field-station-diagnostics.js"></script>
 <script type="module" src="/field-station-room.js"></script>
 </body>
 </html>
