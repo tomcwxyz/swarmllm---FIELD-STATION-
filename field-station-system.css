@@ -1,0 +1,55 @@
+/* FIELD STATION — shell subset of the supplied v0.2 design system.
+   Mono = apparatus. Sans = reading. Nord, square edges, hairline rules, no shadows. */
+@import url("https://fonts.bunny.net/css?family=ibm-plex-mono:400,500,600|ibm-plex-sans:400,500,600,700");
+
+:root{
+  --fs-font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --fs-font-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --fs-text-xs:.75rem;--fs-text-sm:.8125rem;--fs-text-base:1rem;--fs-text-md:1.125rem;
+  --fs-text-lg:1.5rem;--fs-text-xl:2rem;--fs-text-2xl:2.75rem;--fs-text-3xl:4rem;--fs-text-4xl:6rem;
+  --fs-leading-tight:1.05;--fs-leading-snug:1.25;--fs-leading-body:1.6;
+  --fs-tracking-display:-.02em;--fs-tracking-label:.08em;
+  --fs-ink:#2E3440;--fs-ink-soft:#3B4252;--fs-muted:#4C566A;--fs-line:#D8DEE9;
+  --fs-paper-shade:#ECEFF4;--fs-paper:#FCFCFD;
+  --fs-accent:#4C7099;--fs-accent-bright:#5D7D9D;--fs-accent-pale:#88C0D0;
+  --fs-signal-red:#BF616A;--fs-signal-orange:#D08770;--fs-signal-yellow:#EBCB8B;
+  --fs-signal-green:#A3BE8C;--fs-signal-violet:#B48EAD;
+  --fs-space-1:.25rem;--fs-space-2:.5rem;--fs-space-3:.75rem;--fs-space-4:1rem;
+  --fs-space-6:1.5rem;--fs-space-8:2rem;--fs-space-12:3rem;--fs-space-16:4rem;
+  --fs-space-24:6rem;--fs-space-32:8rem;
+  --fs-measure:70ch;--fs-page-max:1320px;--fs-radius:0;--fs-radius-input:2px;
+  --fs-border:1px solid var(--fs-line);--fs-border-ink:1px solid var(--fs-ink);
+  color-scheme:light;
+}
+[data-theme="dark"]{
+  --fs-ink:#ECEFF4;--fs-ink-soft:#D8DEE9;--fs-muted:#9AA5B8;
+  --fs-line:#3B4252;--fs-paper-shade:#3B4252;--fs-paper:#2E3440;
+  --fs-accent:#88C0D0;--fs-accent-bright:#8FBCBB;--fs-accent-pale:#81A1C1;
+  --fs-signal-red:#D08770;--fs-signal-orange:#EBCB8B;--fs-signal-yellow:#A3BE8C;
+  --fs-signal-green:#A3BE8C;--fs-signal-violet:#D8B4D6;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+*{margin:0}
+html{-webkit-text-size-adjust:100%;background:var(--fs-paper)}
+body{background:var(--fs-paper);color:var(--fs-ink);font:400 var(--fs-text-base)/var(--fs-leading-body) var(--fs-font-sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--fs-accent);text-decoration:underline;text-underline-offset:.18em;text-decoration-thickness:1px}
+a:hover{color:var(--fs-accent-bright)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--fs-accent);outline-offset:2px}
+::selection{background:var(--fs-accent-pale);color:var(--fs-ink)}
+strong,b{font-weight:600}
+
+.fs-container{width:min(var(--fs-page-max),calc(100% - 3rem));margin-inline:auto}
+.fs-wordmark{display:inline-flex;align-items:center;gap:.75em;font:500 var(--fs-text-sm)/1 var(--fs-font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--fs-ink);text-decoration:none;white-space:nowrap}
+.fs-wordmark .fs-mark{color:var(--fs-accent);letter-spacing:var(--fs-tracking-label)}
+.fs-label,.fs-type{font:500 var(--fs-text-xs)/1 var(--fs-font-mono);letter-spacing:var(--fs-tracking-label);text-transform:uppercase;color:var(--fs-muted)}
+.fs-meta{font:400 var(--fs-text-sm)/1.6 var(--fs-font-mono);color:var(--fs-muted)}
+.fs-btn{display:inline-flex;align-items:center;justify-content:center;gap:.65rem;padding:var(--fs-space-4) var(--fs-space-6);border:var(--fs-border-ink);border-radius:0;background:transparent;color:var(--fs-ink);font:500 var(--fs-text-sm)/1 var(--fs-font-mono);letter-spacing:var(--fs-tracking-label);text-transform:uppercase;text-decoration:none;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease}
+.fs-btn--primary{background:var(--fs-ink);color:var(--fs-paper)}
+.fs-btn:hover{border-color:var(--fs-accent);color:var(--fs-accent)}
+.fs-btn--primary:hover{background:var(--fs-accent);border-color:var(--fs-accent);color:var(--fs-paper)}
+.fs-btn:disabled{opacity:.42;cursor:default}
+.fs-theme-toggle{font:500 var(--fs-text-xs)/1 var(--fs-font-mono);letter-spacing:var(--fs-tracking-label);text-transform:uppercase;color:var(--fs-ink);background:transparent;border:var(--fs-border-ink);border-radius:0;padding:.65rem .8rem;cursor:pointer}
+.fs-theme-toggle:hover{border-color:var(--fs-accent);color:var(--fs-accent)}
+.fs-rule{border:0;border-top:var(--fs-border)}
