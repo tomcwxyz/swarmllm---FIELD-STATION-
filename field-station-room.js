@@ -10,10 +10,12 @@ const UPSTREAM_PREFIX = "swarmllm-room-";
 const INVITE_KEY_LENGTH = 32;
 const $ = (id) => document.getElementById(id);
 
+const rawFragment = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
+const fragmentParams = new URLSearchParams(rawFragment);
+const hasInviteMarker = fragmentParams.has("invite") || fragmentParams.has("key") || new URLSearchParams(location.search).has("code");
+
 function parseInvitation() {
-  const rawFragment = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
-  const fragment = new URLSearchParams(rawFragment);
-  const compact = fragment.get("invite") || "";
+  const compact = fragmentParams.get("invite") || "";
   if (compact) {
     const dot = compact.indexOf(".");
     if (dot > 0) {
@@ -26,7 +28,7 @@ function parseInvitation() {
   // Backwards compatibility with the first FIELD STATION wrapper. New links no longer
   // expose the short room label as a query parameter or ask people to type it manually.
   const code = normaliseRoomCode(new URLSearchParams(location.search).get("code") || "");
-  const key = normaliseInviteKey(fragment.get("key") || "");
+  const key = normaliseInviteKey(fragmentParams.get("key") || "");
   if (code && key.length === INVITE_KEY_LENGTH) return { code, key, legacy: true };
   return null;
 }
@@ -80,6 +82,21 @@ function copyInvite() {
 }
 
 function configureEntrySurface() {
+  // The entry notice replaces the persistent in-room warning until someone has joined.
+  if ($("privacy-strip")) $("privacy-strip").hidden = true;
+
+  if (hasInviteMarker && !invitation) {
+    document.body.dataset.entry = "invite";
+    $("create-btn").hidden = true;
+    $("join-btn").hidden = true;
+    if ($("entry-type")) $("entry-type").textContent = "INVITATION · INVALID";
+    if ($("entry-title")) $("entry-title").innerHTML = '<span class="lo">This invitation link is</span> incomplete.';
+    if ($("entry-lede")) $("entry-lede").textContent = "Ask the room host to copy a fresh FIELD STATION invitation link.";
+    if ($("entry-action-note")) $("entry-action-note").hidden = true;
+    setStatus("The protected room invitation could not be read.", "warn");
+    return;
+  }
+
   const invited = !!invitation;
   document.body.dataset.entry = invited ? "invite" : "create";
 
@@ -121,8 +138,27 @@ function validateEntry(event, action) {
   return true;
 }
 
+function installRoomChrome() {
+  const room = $("room-screen");
+  const privacy = $("privacy-strip");
+  const badge = $("room-badge");
+  if (!room) return;
+
+  const sync = () => {
+    const active = room.style.display === "flex";
+    if (privacy) privacy.hidden = !active;
+    if (active && badge && badge.textContent !== "COPY INVITE") {
+      badge.textContent = "COPY INVITE";
+      badge.title = "Copy protected invitation link";
+    }
+  };
+  new MutationObserver(sync).observe(room, { attributes: true, attributeFilter: ["style"] });
+  sync();
+}
+
 function installPreflight() {
   configureEntrySurface();
+  installRoomChrome();
 
   $("join-btn")?.addEventListener("click", (event) => validateEntry(event, "join"), true);
   $("create-btn")?.addEventListener("click", (event) => validateEntry(event, "create"), true);
