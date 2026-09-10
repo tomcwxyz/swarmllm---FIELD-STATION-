@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { patchFieldRuntime } from "./patch-field-runtime.mjs";
 import { patchFieldModels } from "./patch-field-models.mjs";
 import { patchFieldModelRuntime } from "./patch-field-model-runtime.mjs";
+import { patchFieldLlamaRuntime } from "./patch-field-llama.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
@@ -48,6 +49,7 @@ for (const path of [
 await patchFieldRuntime(join(dist, "room.js"));
 await patchFieldModelRuntime(join(dist, "room.js"));
 await patchFieldModels(join(dist, "engine", "gguf.js"));
+await patchFieldLlamaRuntime(join(dist, "engine", "dense.js"), join(dist, "engine", "wgsl", "base.js"));
 
 // Make /room a real static route as well as a Vercel rewrite target. This keeps the
 // FIELD STATION build portable to any static host and avoids depending on platform routing.
