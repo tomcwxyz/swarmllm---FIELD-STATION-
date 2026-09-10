@@ -22,7 +22,7 @@ export async function patchFieldModelRuntime(roomPath) {
   source = replaceOnce(
     source,
     importMarker,
-    `${importMarker}\nimport { denseConfigFromGGUF } from "./engine/model-adapters.js";`,
+    `${importMarker}\nimport { denseConfigFromGGUF } from "./engine/model-adapters.js";\n\n// FIELD STATION custom models are ephemeral room descriptors, not trusted config blobs.\n// Only the small set of fields needed to identify a remote GGUF crosses the control channel.\nfunction fieldModelDescriptor(modelKey) {\n  const model = MODELS[modelKey];\n  if (!model?.fieldCustom || model.kind !== "gguf") return null;\n  return {\n    label: String(model.label || "Custom GGUF").slice(0, 160),\n    kind: "gguf",\n    gguf: String(model.gguf || ""),\n    fieldCustom: true,\n  };\n}\n\nfunction installFieldModel(modelKey, descriptor, needGB) {\n  if (!modelKey || !descriptor?.fieldCustom || descriptor.kind !== "gguf") return false;\n  let url;\n  try { url = new URL(String(descriptor.gguf || "")); } catch { return false; }\n  if (url.protocol !== "https:" || !/\\.gguf(?:$|[?#])/i.test(url.href)) return false;\n  const label = String(descriptor.label || "Custom GGUF").slice(0, 160);\n  MODELS[modelKey] = { label, kind: "gguf", gguf: url.toString(), fieldCustom: true };\n  const gb = Number(needGB);\n  if (Number.isFinite(gb) && gb >= 0.2 && gb <= 128) NEED_GB[modelKey] = gb;\n  const select = $("ai-model");\n  if (select && ![...select.options].some((option) => option.value === modelKey)) {\n    const option = document.createElement("option");\n    option.value = modelKey; option.textContent = label; select.appendChild(option);\n  }\n  return true;\n}`,
     "model catalogue import",
   );
 
@@ -58,6 +58,38 @@ export async function patchFieldModelRuntime(roomPath) {
     duplicateHeaderMarker,
     `      if (!ai.G || ai.GModel !== modelKey) ai.G = await fetchGGUFHeader(M.gguf, false);\n      ai.GModel = modelKey;\n      layerBytes = Object.values(ggmlLayerNames(0))`,
     "duplicate dense GGUF header fetch",
+  );
+
+  const startRequestMarker = `  broadcastAll({ t: "ai-start-req", model, boss, by: myName });`;
+  source = replaceOnce(
+    source,
+    startRequestMarker,
+    `  broadcastAll({\n    t: "ai-start-req", model, boss, by: myName,\n    modelDef: fieldModelDescriptor(model), needGB: NEED_GB[model],\n  });`,
+    "start request custom model descriptor",
+  );
+
+  const workerLoadMarker = `      const msg = {\n        t: "ai-load", model: modelKey, range: ranges[i + 1],\n        next: i + 1 < ai.chain.length ? ai.chain[i + 1] : "host",\n        host: peer.id,\n      };`;
+  source = replaceOnce(
+    source,
+    workerLoadMarker,
+    `      const msg = {\n        t: "ai-load", model: modelKey, range: ranges[i + 1],\n        modelDef: fieldModelDescriptor(modelKey), needGB: NEED_GB[modelKey],\n        next: i + 1 < ai.chain.length ? ai.chain[i + 1] : "host",\n        host: peer.id,\n      };`,
+    "worker custom model descriptor",
+  );
+
+  const workerCaseMarker = `    case "ai-load": {\n      if (MODELS[d.model]) $("ai-model").value = d.model;`;
+  source = replaceOnce(
+    source,
+    workerCaseMarker,
+    `    case "ai-load": {\n      installFieldModel(d.model, d.modelDef, d.needGB);\n      if (MODELS[d.model]) $("ai-model").value = d.model;`,
+    "worker installs custom model",
+  );
+
+  const startCaseMarker = `    case "ai-start-req":\n      if (MODELS[d.model]) $("ai-model").value = d.model;   // every screen shows the model that was actually started`;
+  source = replaceOnce(
+    source,
+    startCaseMarker,
+    `    case "ai-start-req":\n      installFieldModel(d.model, d.modelDef, d.needGB);\n      if (MODELS[d.model]) $("ai-model").value = d.model;   // every screen shows the model that was actually started`,
+    "boss installs custom model",
   );
 
   await writeFile(roomPath, source);
