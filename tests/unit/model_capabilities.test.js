@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { GGML_Q6_K } from "../../engine/gguf.js";
+import { GGML_Q4_0, GGML_Q6_K } from "../../engine/gguf.js";
 import { GGML_Q4_K, Q4_K_BLOCK_BYTES, dequantQ4K, q4KTypeBytes } from "../../engine/q4k.js";
 import { inspectGGUFCompatibility } from "../../engine/model-capabilities.js";
 
@@ -42,6 +42,36 @@ Deno.test("GGUF preflight separates architecture support from quant support", ()
   assert(report.reasons.some((r) => r.includes("Q4_K")));
   assert(report.reasons.some((r) => r.includes("Q6_K")));
   assertEquals(report.totalTensorBytes, 144 + 210);
+});
+
+Deno.test("original Llama 3 Q4_0 preflight is executable", () => {
+  const report = inspectGGUFCompatibility({
+    meta: { "general.architecture": "llama", "llama.block_count": 32 },
+    tensors: {
+      "blk.0.attn_q.weight": { ggmlType: GGML_Q4_0, nElems: 4096 * 4096, shape: [4096, 4096] },
+    },
+  });
+  assertEquals(report.adapter, "llama");
+  assertEquals(report.architectureStatus, "supported");
+  assertEquals(report.status, "supported");
+  assertEquals(report.layerCount, 32);
+});
+
+Deno.test("scaled-RoPE Llama preflight fails closed as architecture work", () => {
+  const report = inspectGGUFCompatibility({
+    meta: {
+      "general.architecture": "llama",
+      "llama.block_count": 16,
+      "llama.rope.scaling.type": "llama3",
+    },
+    tensors: {
+      "blk.0.attn_q.weight": { ggmlType: GGML_Q4_0, nElems: 2048 * 2048, shape: [2048, 2048] },
+    },
+  });
+  assertEquals(report.adapter, "llama");
+  assertEquals(report.architectureStatus, "feature-pending");
+  assertEquals(report.status, "architecture-needed");
+  assert(report.reasons.some((r) => r.includes("RoPE scaling llama3")));
 });
 
 Deno.test("GGUF preflight reports Gemma as architecture work, not a quant failure", () => {
