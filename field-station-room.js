@@ -103,7 +103,8 @@ function installPreflight() {
 
   for (const id of ["room-badge", "side-code"]) {
     $(id)?.addEventListener("click", (event) => {
-      if (!window.__FIELD_STATION_ROOM__?.key) return;
+      const key = window.__FIELD_STATION_ROOM__?.key || currentKey();
+      if (key.length !== INVITE_KEY_LENGTH) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       copyInvite();
@@ -174,6 +175,14 @@ function gateConnection(connection, { outgoingProof = null, expectedProof = null
   return connection;
 }
 
+function activeCredentials(hostCredentials = null) {
+  if (hostCredentials?.code && hostCredentials?.key) return hostCredentials;
+  const code = currentCode();
+  const key = currentKey();
+  if (!code || key.length !== INVITE_KEY_LENGTH) return null;
+  return { code, key, proof: deriveJoinProof(code, key) };
+}
+
 function installPeerBoundary() {
   const OriginalPeer = window.Peer;
   if (typeof OriginalPeer !== "function") throw new Error("PeerJS did not load from the local vendor bundle");
@@ -200,7 +209,6 @@ function installPeerBoundary() {
       }
 
       this.__fieldStationCredentials = credentials;
-      this.__fieldStationAuthorisedPeers = new Set();
       if (credentials) {
         window.__FIELD_STATION_ROOM__ = credentials;
         $("key-input").value = credentials.key;
@@ -210,28 +218,33 @@ function installPeerBoundary() {
     }
 
     connect(target, options = {}) {
+      const credentials = activeCredentials(this.__fieldStationCredentials);
       if (typeof target === "string" && target.startsWith(UPSTREAM_PREFIX)) {
+        if (!credentials) throw new Error("FIELD STATION invitation key missing");
         const code = normaliseRoomCode(target.slice(UPSTREAM_PREFIX.length));
-        const key = currentKey();
-        if (key.length !== INVITE_KEY_LENGTH) throw new Error("FIELD STATION invitation key missing");
+        const key = credentials.key;
         const connection = super.connect(deriveRoomPeerId(code, key), options);
         return gateConnection(connection, { outgoingProof: deriveJoinProof(code, key) });
       }
-      return super.connect(target, options);
+
+      const connection = super.connect(target, options);
+      // SwarmLLM creates extra chain and stripe links after the initial join. Protect those too,
+      // otherwise possession of a transient worker PeerJS ID would be enough to attach to it.
+      return credentials
+        ? gateConnection(connection, { outgoingProof: credentials.proof || deriveJoinProof(credentials.code, credentials.key) })
+        : connection;
     }
 
     on(eventName, handler) {
-      if (eventName !== "connection" || !this.__fieldStationCredentials) return super.on(eventName, handler);
+      if (eventName !== "connection") return super.on(eventName, handler);
       return super.on(eventName, (connection) => {
-        const authorised = this.__fieldStationAuthorisedPeers;
-        if (connection.label === "stripe") {
-          if (authorised.has(connection.peer)) handler(connection);
-          else connection.close();
+        const credentials = activeCredentials(this.__fieldStationCredentials);
+        if (!credentials) {
+          connection.close();
           return;
         }
         gateConnection(connection, {
-          expectedProof: this.__fieldStationCredentials.proof,
-          onAuthorised: () => authorised.add(connection.peer),
+          expectedProof: credentials.proof || deriveJoinProof(credentials.code, credentials.key),
         });
         // Let SwarmLLM attach its listeners now; its queued "open" handler is released only
         // after the FIELD STATION authentication exchange succeeds.
