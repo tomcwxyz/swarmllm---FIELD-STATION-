@@ -30,13 +30,22 @@ export async function patchFieldRuntime(path) {
     + `  // FIELD STATION: readiness is already gated by every assigned shard completing.\n  // Do not slow a fast device merely to make progress bars move in step with the slowest.\n  pacerHook = null;\n`
     + source.slice(end + pacerEnd.length);
 
+  const fetchMarker = '  const r = await fetch(url, { headers: { Range: `bytes=${lo}-${hi}` } });';
+  if (!source.includes(fetchMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: range-fetch marker changed upstream");
+  }
+  source = source.replace(
+    fetchMarker,
+    `  ai.loadNetworkRequests = (ai.loadNetworkRequests || 0) + 1;\n  const r = await fetch(url, { headers: { Range: \`bytes=\${lo}-\${hi}\` } });`,
+  );
+
   const progressMarker = `function aiProgress(done, total, note) {\n  const pct = total ? Math.min(100, Math.round(done / total * 100)) : 0;\n  $("ldg-fill").style.width = pct + "%";\n  $("ldg-sub").textContent = \`${'${(done / 2 ** 20).toFixed(0)}'} MB of ${'${(total / 2 ** 20).toFixed(0)}'} MB · ${'${pct}'}%\` + (note ? " · " + note : "");\n}`;
   if (!source.includes(progressMarker)) {
     throw new Error("FIELD STATION runtime patch failed: download progress marker changed upstream");
   }
   source = source.replace(
     progressMarker,
-    `function aiProgress(done, total, note) {\n  const pct = total ? Math.min(100, Math.round(done / total * 100)) : 0;\n  $("ldg-fill").style.width = pct + "%";\n  const elapsed = ai.loadStartedAt ? (performance.now() - ai.loadStartedAt) / 1000 : 0;\n  const networkBytes = Math.max(0, done - (ai.loadCacheStart || 0));\n  const rate = elapsed > 0.75 && networkBytes > 0 ? (networkBytes / 2 ** 20 / elapsed).toFixed(1) + " MB/s" : "";\n  $("ldg-sub").textContent = \`${'${(done / 2 ** 20).toFixed(0)}'} MB of ${'${(total / 2 ** 20).toFixed(0)}'} MB · ${'${pct}'}%\`\n    + (rate ? " · " + rate : "") + (note ? " · " + note : "");\n}`,
+    `function aiProgress(done, total, note) {\n  const pct = total ? Math.min(100, Math.round(done / total * 100)) : 0;\n  $("ldg-fill").style.width = pct + "%";\n  const elapsed = ai.loadStartedAt ? (performance.now() - ai.loadStartedAt) / 1000 : 0;\n  const cachedThisLoad = Math.max(0, cacheHits - (ai.loadCacheStart || 0));\n  const networkBytes = Math.max(0, done - cachedThisLoad);\n  const rate = elapsed > 0.75 && networkBytes > 0 ? (networkBytes / 2 ** 20 / elapsed).toFixed(1) + " MB/s" : "";\n  const req = ai.loadNetworkRequests ? ai.loadNetworkRequests + " req" : "";\n  const cached = cachedThisLoad > 2 ** 20 ? (cachedThisLoad / 2 ** 20).toFixed(0) + " MB cached" : "";\n  $("ldg-sub").textContent = \`${'${(done / 2 ** 20).toFixed(0)}'} MB of ${'${(total / 2 ** 20).toFixed(0)}'} MB · ${'${pct}'}%\`\n    + (rate ? " · " + rate : "") + (req ? " · " + req : "") + (cached ? " · " + cached : "")\n    + (note ? " · " + note : "");\n}`,
   );
 
   const timingMarker = `  ai.myPct = 0;\n  ai.prog = { [myName]: 0 }; ai.progAt = { [myName]: Date.now() };`;
@@ -45,7 +54,7 @@ export async function patchFieldRuntime(path) {
   }
   source = source.replace(
     timingMarker,
-    `  ai.myPct = 0;\n  ai.prog = { [myName]: 0 }; ai.progAt = { [myName]: Date.now() };\n  ai.loadStartedAt = performance.now();\n  ai.loadCacheStart = cacheHits;`,
+    `  ai.myPct = 0;\n  ai.prog = { [myName]: 0 }; ai.progAt = { [myName]: Date.now() };\n  ai.loadStartedAt = performance.now();\n  ai.loadCacheStart = cacheHits;\n  ai.loadNetworkRequests = 0;`,
   );
 
   await writeFile(path, source);
