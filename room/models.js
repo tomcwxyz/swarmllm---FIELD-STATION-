@@ -1,12 +1,19 @@
 // Model catalogue for the room: URLs, layer counts, memory needs, context length.
 
-export const NEED_GB = { "qwen3-0.6b-q4": 0.6, "qwen3-0.6b": 0.8, "qwen3-1.7b": 2.0, "qwen3-4b": 4.6, "qwen3.8-27b": 16.5, "smollm-135m": 0.6 };
+export const NEED_GB = { "qwen3-0.6b-q4": 0.6, "qwen3-0.6b-q4k": 0.9, "qwen3-0.6b": 0.8, "qwen3-1.7b": 2.0, "qwen3-4b": 4.6, "qwen3.8-27b": 16.5, "smollm-135m": 0.6 };
 
 export const MODELS = {
   // Web-first quick start: Q4_0 is natively streamable by the engine and cuts the
   // transfer by roughly a third versus the Q8 build while keeping the same model.
   "qwen3-0.6b-q4": { label: "Qwen3 0.6B · Q4 · quick", kind: "gguf",
     gguf: "https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_0.gguf",
+    cfg: "https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/config.json",
+    tok: "https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/tokenizer.json" },
+  // First FIELD STATION K-quant field test. Q4_K_M is a mixed GGUF recipe; its
+  // Q4_K/Q5_K/Q6_K matrices are converted to the existing Q8 GPU representation
+  // during load. Keep this explicitly experimental until the real-model golden lands.
+  "qwen3-0.6b-q4k": { label: "Qwen3 0.6B · Q4_K_M · experimental", kind: "gguf",
+    gguf: "https://huggingface.co/QuantFactory/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B.Q4_K_M.gguf",
     cfg: "https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/config.json",
     tok: "https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/tokenizer.json" },
   "qwen3-0.6b": { label: "Qwen3 0.6B · Q8 · quality", kind: "gguf",
