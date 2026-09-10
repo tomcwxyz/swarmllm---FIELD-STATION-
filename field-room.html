@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/field-station.css">
 <link rel="stylesheet" href="/field-station-entry.css">
 <link rel="stylesheet" href="/field-station-diagnostics.css">
+<link rel="stylesheet" href="/field-station-models.css">
 <title>Collective compute · FIELD STATION</title>
 <script src="/vendor/peerjs.min.js"></script>
 </head>
@@ -91,6 +92,17 @@
           <option value="qwen3.8-27b">Qwen 3.8 27B · Q4</option>
           <option value="smollm-135m">SmolLM 135M · bf16</option>
         </select>
+        <button id="model-preflight-toggle" type="button">Inspect another GGUF…</button>
+        <div id="model-preflight" hidden>
+          <label for="model-url">GGUF URL</label>
+          <input id="model-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://huggingface.co/…/resolve/…/model.gguf">
+          <div class="model-preflight-actions">
+            <button id="model-inspect" type="button">Inspect header →</button>
+            <button id="model-use" type="button" hidden>Use this model →</button>
+          </div>
+          <div id="model-report" aria-live="polite"></div>
+          <div class="model-preflight-note">Inspection reads the GGUF header/index only. A compatible model is not downloaded until you start it.</div>
+        </div>
         <div id="ai-need">
           <div id="need-bar"><div id="need-fill"></div></div>
           <div id="need-text">Measuring room capacity…</div>
@@ -142,6 +154,7 @@
 <div id="toasts" aria-live="polite"></div>
 <script src="/field-station-shell.js"></script>
 <script src="/field-station-diagnostics.js"></script>
+<script type="module" src="/field-station-models.js"></script>
 <script type="module" src="/field-station-room.js"></script>
 </body>
 </html>
