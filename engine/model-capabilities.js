@@ -16,7 +16,7 @@ export const QUANT_CAPABILITIES = Object.freeze({
   [GGML_Q4_0]: { name: "Q4_0", status: "supported", path: "native-gpu" },
   [GGML_Q4_1]: { name: "Q4_1", status: "supported-with-conversion", path: "requant-q8" },
   [GGML_Q8_0]: { name: "Q8_0", status: "supported", path: "native-gpu" },
-  [GGML_Q4_K]: { name: "Q4_K", status: "codec-ready", path: "q4k-to-q8-next" },
+  [GGML_Q4_K]: { name: "Q4_K", status: "supported-with-conversion", path: "field-build-requant-q8" },
   [GGML_Q5_K]: { name: "Q5_K", status: "supported-with-conversion", path: "requant-q8" },
   [GGML_Q6_K]: { name: "Q6_K", status: "supported-with-conversion", path: "requant-q8" },
 });
