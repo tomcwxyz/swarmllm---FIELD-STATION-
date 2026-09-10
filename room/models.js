@@ -21,7 +21,7 @@ export const MODELS = {
     gguf: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf",
     cfg: "https://huggingface.co/Qwen/Qwen3-4B/resolve/main/config.json",
     tok: "https://huggingface.co/Qwen/Qwen3-4B/resolve/main/tokenizer.json" },
-  "qwen3.8-27b": { label: "Qwen 3.8 27B \u00b7 Q4", kind: "qwen35",
+  "qwen3.8-27b": { label: "Qwen 3.8 27B · Q4", kind: "qwen35",
     gguf: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q4_0.gguf" },
   "smollm-135m": { label: "SmolLM 135M · bf16", kind: "safetensors",
     st: "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct/resolve/main/model.safetensors",
@@ -33,5 +33,8 @@ export const MODELS = {
 // for this many positions (4 KB per position each for the 27B, so 16 MiB per attention layer at
 // 2048); the kernels only use it as a stride. Generation stops before the cache would overflow.
 export const MAX_SEQ = 2048;
-export const MAX_NEW = 400;    // longest answer, tokens
+// The upstream 400-token demonstration limit could terminate otherwise healthy answers mid-sentence.
+// FIELD STATION allows a substantially fuller response while retaining a hard guard against runaway
+// generation on slower distributed models. The runtime reports explicitly when this limit is hit.
+export const MAX_NEW = 1024;
 export const MIN_ROOM = 32;    // a prompt must leave at least this many tokens for the answer
