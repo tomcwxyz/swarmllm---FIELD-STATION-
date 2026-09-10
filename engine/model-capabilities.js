@@ -24,7 +24,10 @@ export const QUANT_CAPABILITIES = Object.freeze({
 export const ARCHITECTURE_CAPABILITIES = Object.freeze({
   qwen3: { adapter: "dense", status: "supported" },
   qwen35: { adapter: "qwen35", status: "supported" },
-  llama: { adapter: "llama", status: "planned" },
+  // The executable Llama path currently targets original Llama 3 dense GGUFs.
+  // Later Llama releases that declare scaled-RoPE metadata still require a
+  // reference-verified scaled-RoPE implementation before becoming built-ins.
+  llama: { adapter: "llama", status: "supported" },
   gemma: { adapter: "gemma", status: "planned" },
   gemma2: { adapter: "gemma", status: "planned" },
   gemma3: { adapter: "gemma", status: "planned" },
