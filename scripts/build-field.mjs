@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { patchFieldRuntime } from "./patch-field-runtime.mjs";
+import { patchFieldModels } from "./patch-field-models.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
@@ -39,9 +40,10 @@ for (const path of [
   "apple-touch-icon.png",
 ]) await copy(path);
 
-// FIELD STATION keeps upstream room.js mergeable: small behavioural differences are
-// asserted and applied only to the distributable copy.
+// FIELD STATION keeps upstream room.js and engine files mergeable: small behavioural
+// differences are asserted and applied only to the distributable copy.
 await patchFieldRuntime(join(dist, "room.js"));
+await patchFieldModels(join(dist, "engine", "gguf.js"));
 
 // Make /room a real static route as well as a Vercel rewrite target. This keeps the
 // FIELD STATION build portable to any static host and avoids depending on platform routing.
