@@ -1,5 +1,5 @@
-import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { denseConfigFromGGUF, resolveGGUFAdapter } from "../../engine/model-adapters.js";
+import { assert, assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { chatRuntimeFromGGUF, chatRuntimeForStyle, denseConfigFromGGUF, resolveGGUFAdapter } from "../../engine/model-adapters.js";
 
 function qwenHeader(overrides = {}) {
   return {
@@ -22,6 +22,19 @@ function qwenHeader(overrides = {}) {
       "blk.0.ffn_up.weight": { shape: [3072, 1024] },
       "blk.0.ffn_gate.weight": { shape: [3072, 1024] },
     },
+  };
+}
+
+function fakeTokenizer() {
+  return {
+    vocab: {
+      "<|im_start|>": 900,
+      "<|im_end|>": 901,
+      "<|endoftext|>": 902,
+      "<think>": 903,
+      "</think>": 904,
+    },
+    encode(text) { return [...text].map((ch) => ch.codePointAt(0)); },
   };
 }
 
@@ -58,8 +71,21 @@ Deno.test("Qwen3 adapter falls back to tensor shapes for optional dimensions", (
   assertEquals(cfg.vocab_size, 151936);
 });
 
+Deno.test("adapter owns Qwen ChatML message envelope and stop tokens", () => {
+  const tok = fakeTokenizer();
+  const chat = chatRuntimeForStyle("chatml-qwen", tok);
+  assertEquals(chat.id, "chatml-qwen");
+  assertEquals(chat.encodeMessage("user", "hi"), [900, ...tok.encode("user\nhi"), 901, 10]);
+  assertEquals(chat.assistantPrefix(), [900, ...tok.encode("assistant\n"), 903, 10, 10, 904, 10, 10]);
+  assert(chat.isStop(901));
+  assert(chat.isStop(902));
+  assert(!chat.isStop(42));
+  assertEquals(chatRuntimeFromGGUF(qwenHeader(), tok).id, "chatml-qwen");
+});
+
 Deno.test("planned architectures do not silently enter the dense engine", () => {
   const G = { meta: { "general.architecture": "llama" }, tensors: {} };
   assertEquals(resolveGGUFAdapter(G)?.status, "planned");
   assertThrows(() => denseConfigFromGGUF(G), Error, "does not have a FIELD STATION dense adapter");
+  assertThrows(() => chatRuntimeFromGGUF(G, fakeTokenizer()), Error, "chat style llama3-header is not implemented");
 });
