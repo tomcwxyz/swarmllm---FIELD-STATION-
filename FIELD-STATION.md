@@ -12,7 +12,7 @@ The inference engine remains upstream SwarmLLM. FIELD STATION adds a thin experi
 - The four-character room code is now only a human-friendly label, not the security boundary.
 - Each room receives a random 128-bit invitation key.
 - Room code + invitation key derive an opaque PeerJS host ID; the raw key is not used as the network ID.
-- The host validates a separate, domain-separated join proof over the encrypted WebRTC data channel before releasing the connection to the SwarmLLM runtime. The reusable proof is not placed in PeerJS signalling metadata.
+- Every FIELD STATION peer link validates a separate, domain-separated room proof over the encrypted WebRTC data channel before releasing the connection to the SwarmLLM runtime. The reusable proof is not placed in PeerJS signalling metadata.
 - Protected invitation links keep the invitation key in the URL fragment (`#key=...`) so the browser does not send it as part of the HTTP request or normal referrer.
 - PeerJS 1.5.4 is pinned as a package dependency and copied into the static build. FIELD STATION pages do not execute PeerJS from a runtime CDN.
 - Vercel adds basic browser hardening headers and disables camera, microphone and geolocation for the experiment.
