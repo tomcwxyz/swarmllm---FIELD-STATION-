@@ -92,6 +92,7 @@ Deno.test("Qwen3 GGUF adapter reconstructs DenseEngine config from one header", 
   assertEquals(cfg.vocab_size, 151936);
   assertEquals(cfg.rms_norm_eps, 1e-6);
   assertEquals(cfg.rope_theta, 1_000_000);
+  assertEquals(cfg.rope_interleaved, false);
   assertEquals(cfg.max_position_embeddings, 40960);
 });
 
@@ -139,6 +140,7 @@ Deno.test("Llama 3 GGUF adapter reconstructs DenseEngine config", () => {
   assertEquals(cfg.vocab_size, 128256);
   assertEquals(cfg.rms_norm_eps, 1e-5);
   assertEquals(cfg.rope_theta, 500_000);
+  assertEquals(cfg.rope_interleaved, true);
   assertEquals(cfg.max_position_embeddings, 8192);
 });
 
