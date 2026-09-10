@@ -72,7 +72,7 @@ export async function patchFieldRuntime(path) {
   }
   source = source.replace(
     aiStateMarker,
-    `  waiters: new Map(),    // pos -> resolve(hiddenF32) for host awaiting return\n  busy: false,\n  // FIELD STATION: canonical room conversation lives in host memory only. It is rebuilt\n  // into the model prompt each turn and disappears when the host closes the room.\n  history: [],\n  contextMeta: { usedTurns: 0, droppedTurns: 0, promptTokens: 0 },\n};`,
+    `  waiters: new Map(),    // pos -> resolve(hiddenF32) for host awaiting return\n  busy: false,\n  // FIELD STATION: canonical room conversation lives in host memory only. It is rebuilt\n  // into the model prompt each turn and disappears when the host closes the room.\n  history: [],\n  contextMeta: { usedTurns: 0, droppedTurns: 0, promptTokens: 0 },\n  chat: null,\n};`,
   );
 
   const crumbMarker = 'function crumb(s) { try { localStorage.setItem("swarm-crumb", JSON.stringify({ s, t: Date.now(), mem: performance.memory?.usedJSHeapSize })); } catch {} }';
@@ -90,8 +90,18 @@ export async function patchFieldRuntime(path) {
   }
   source = source.replace(
     promptMarker,
-    `  const V = ai.tok.vocab;\n  const imEnd = V["<|im_end|>"], eot = V["<|endoftext|>"];\n  const built = buildConversationPrompt({\n    tok: ai.tok, vocab: V, history: ai.history || [], currentText: text,\n    maxSeq: MAX_SEQ, minRoom: MIN_ROOM,\n  });\n  const ids = built.ids;\n  ai.contextMeta = { usedTurns: built.usedTurns, droppedTurns: built.droppedTurns, promptTokens: ids.length };\n  const contextLine = $("context-line");\n  if (contextLine) contextLine.textContent = \`CONTEXT / \${built.usedTurns} prior turn\${built.usedTurns === 1 ? "" : "s"} · \${ids.length}/\${MAX_SEQ} prompt tok\${built.droppedTurns ? \` · \${built.droppedTurns} older dropped\` : ""}\`;\n  broadcastAll({ t: "ai-context", ...ai.contextMeta, maxSeq: MAX_SEQ });\n  window.fieldStationDiagnostics?.record("generation:start", {\n    promptTokens: ids.length, usedTurns: built.usedTurns, droppedTurns: built.droppedTurns,\n    devices: ai.chain.length + 1, model: $("ai-model")?.value || null,\n  });`,
+    `  const V = ai.tok.vocab;\n  // The active architecture adapter owns message representation and stopping. Keep a\n  // ChatML fallback only for older/safetensors catalogue entries while they migrate.\n  const legacyStops = new Set([V["<|im_end|>"], V["<|endoftext|>"]].filter(Number.isInteger));\n  const isStop = (token) => ai.chat?.isStop ? ai.chat.isStop(token) : legacyStops.has(token);\n  const built = buildConversationPrompt({\n    tok: ai.tok, vocab: V, chat: ai.chat, history: ai.history || [], currentText: text,\n    maxSeq: MAX_SEQ, minRoom: MIN_ROOM,\n  });\n  const ids = built.ids;\n  ai.contextMeta = { usedTurns: built.usedTurns, droppedTurns: built.droppedTurns, promptTokens: ids.length };\n  const contextLine = $("context-line");\n  if (contextLine) contextLine.textContent = \`CONTEXT / \${built.usedTurns} prior turn\${built.usedTurns === 1 ? "" : "s"} · \${ids.length}/\${MAX_SEQ} prompt tok\${built.droppedTurns ? \` · \${built.droppedTurns} older dropped\` : ""}\`;\n  broadcastAll({ t: "ai-context", ...ai.contextMeta, maxSeq: MAX_SEQ });\n  window.fieldStationDiagnostics?.record("generation:start", {\n    promptTokens: ids.length, usedTurns: built.usedTurns, droppedTurns: built.droppedTurns,\n    devices: ai.chain.length + 1, model: $("ai-model")?.value || null, chatFormat: ai.chat?.id || "legacy-chatml",\n  });`,
   );
+
+  const stopMarkers = [
+    ['if (next === imEnd || next === eot) done = true; else emit(next);', 'if (isStop(next)) done = true; else emit(next);'],
+    ['if (tk === imEnd || tk === eot) { done = true; break; }', 'if (isStop(tk)) { done = true; break; }'],
+    ['if (next === imEnd || next === eot) { await aiPipeToken(next, false); break; }', 'if (isStop(next)) { await aiPipeToken(next, false); break; }'],
+  ];
+  for (const [marker, replacement] of stopMarkers) {
+    if (!source.includes(marker)) throw new Error("FIELD STATION runtime patch failed: generation stop marker changed upstream");
+    source = source.replace(marker, replacement);
+  }
 
   const statsMarker = `    const secs = (performance.now() - t0) / 1000;\n    const stats = \`${'${count}'} tok · ${'${(count / secs).toFixed(1)}'} tok/s · ${'${ai.chain.length + 1}'} devices${'${capped ? ` · stopped: context full (${MAX_SEQ} tokens)` : ""}'}\`;\n    chatBotEnd(reply, stats);\n    sendChat({ t: "ai-gendone", stats }, askerId);`;
   if (!source.includes(statsMarker)) {
@@ -118,5 +128,5 @@ if (process.argv[1] && new URL(import.meta.url).pathname.endsWith(process.argv[1
   const target = process.argv[2];
   if (!target) throw new Error("Usage: node scripts/patch-field-runtime.mjs <room.js>");
   await patchFieldRuntime(target);
-  console.log("FIELD STATION runtime patches applied: downloads, conversation context, finish reasons and diagnostics.");
+  console.log("FIELD STATION runtime patches applied: downloads, conversation context, adapter stops, finish reasons and diagnostics.");
 }
