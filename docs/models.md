@@ -4,16 +4,17 @@ SwarmLLM ships no weights. Browsers fetch tensors by HTTP range request from pub
 
 FIELD STATION is broadening this from a fixed Qwen-oriented catalogue into a capability-based runtime. A GGUF file is a container, not a promise that the model architecture or every tensor quantisation is executable, so compatibility is checked across **architecture**, **tensor formats**, and **tokenizer/chat behaviour** separately.
 
-## Supported models
+## Supported and experimental models
 
 | Model | File | Engine | Notes |
 |---|---|---|---|
 | Qwen 3.8 27B | GGUF Q4_0 (~15 GB), includes the `nextn` draft layer | `Qwen35Engine` | 64 layers: 48 Gated DeltaNet + 16 attention; MTP speculation |
 | Qwen3 4B / 1.7B / 0.6B | GGUF Q4_0 / Q8_0 | `DenseEngine` | dense; 0.6B is the golden-test model |
 | Qwen3 0.6B Q4_K_M | mixed K-quant GGUF | `DenseEngine` through Q8 conversion | experimental field model; real-model golden still required |
+| Meta-Llama-3-8B-Instruct | GGUF Q4_0 (~4.7 GB) | `DenseEngine` with interleaved RoPE | experimental cross-architecture target; real-model reference and multi-device golden still required |
 | SmolLM2 135M | safetensors f32 | `DenseEngine` | smallest demo; quantised to Q8 at load |
 
-Architectures sharing Qwen 3.5/3.6/3.8's hybrid layout can be added mainly as catalogue/configuration work once their exact GGUF metadata and tensor names have been verified.
+The Llama entry is intentionally **experimental rather than verified**. Its metadata, chat format, tensor shapes and canonical GGUF rotary layout are implemented, but support is not considered complete until the exact target file agrees with llama.cpp and produces equivalent one-, two- and three-device results.
 
 ## Quantisation capability
 
@@ -32,7 +33,7 @@ The first Q4_K implementation is deliberately a correctness path. It uses the gg
 
 ## Inspect another GGUF
 
-The room now exposes **Inspect another GGUF…** below the built-in model selector.
+The room exposes **Inspect another GGUF…** below the built-in model selector.
 
 Paste an HTTPS `.gguf` URL and FIELD STATION reads only enough of the file's header/index, using HTTP Range requests, to report:
 
@@ -43,23 +44,30 @@ Paste an HTTPS `.gguf` URL and FIELD STATION reads only enough of the file's hea
 - GGUF tensor bytes and estimated runtime weight bytes;
 - an explicit verdict such as `supported`, `supported-with-conversion`, `architecture-needed`, or `unsupported`.
 
-For a currently compatible **Qwen3 dense** GGUF, **Use this model** turns that single URL into an ephemeral room model. Starting it propagates only a sanitised descriptor—label, HTTPS GGUF URL and memory estimate—to the model dealer and workers. There is no server-side model registry and no arbitrary remote config object is accepted.
+For a currently executable **Qwen3 dense or original Llama 3** GGUF, **Use this model** turns that single URL into an ephemeral room model. Starting it propagates only a sanitised descriptor—label, HTTPS GGUF URL and memory estimate—to the model dealer and workers. There is no server-side model registry and no arbitrary remote config object is accepted.
 
-A remote host must allow browser CORS and HTTP Range requests. Header compatibility is deliberately not treated as proof of numerical correctness: a new architecture/quantisation combination still needs reference evidence before it becomes a built-in supported model.
+A remote host must allow browser CORS and HTTP Range requests. Header compatibility is deliberately not treated as proof of numerical correctness: a new architecture/quantisation combination still needs reference evidence before it becomes a verified built-in model.
 
-## Self-describing Qwen3 GGUFs
+### Llama boundary
 
-`engine/model-adapters.js` is the first architecture-adapter boundary. For Qwen3 dense GGUFs it reconstructs the `DenseEngine` configuration from GGUF metadata and tensor shapes, including hidden size, layer count, attention/KV heads, head dimension, FFN size, vocabulary size, RMS epsilon and RoPE base.
+Original Llama 3 and later Llama-family checkpoints can all appear as `general.architecture = llama`, but they are not computationally identical. The current FIELD STATION adapter supports the original Llama 3 dense path and rejects GGUFs declaring non-`none` `llama.rope.scaling.type` metadata. That keeps Llama 3.1/3.2-style scaled RoPE out until the kernel implements and verifies the relevant frequency scaling.
 
-This means the dense Qwen3 path no longer relies on separate `config.json` and `tokenizer.json` URLs. The host obtains tokenizer vocabulary/merges from GGUF metadata when it loads the embedding/head. Workers do not build a tokenizer because they only execute assigned hidden layers.
+Canonical llama.cpp GGUF conversion permutes Llama Q/K projection rows so the rotary pairs are adjacent. FIELD STATION therefore switches the shared DenseEngine RoPE kernel into an adapter-selected **interleaved** mode for Llama while leaving Qwen on its existing half-split layout. This preserves the GGUF weights exactly as stored and retains Q4_0 network-to-GPU streaming.
+
+## Self-describing dense GGUFs
+
+`engine/model-adapters.js` is the architecture-adapter boundary. For Qwen3 dense and original Llama 3 GGUFs it reconstructs the `DenseEngine` configuration from GGUF metadata and tensor shapes, including hidden size, layer count, attention/KV heads, head dimension, FFN size, vocabulary size, RMS epsilon, RoPE base and RoPE layout.
+
+The host obtains tokenizer vocabulary/merges from GGUF metadata when it loads the embedding/head. Workers do not build a tokenizer because they only execute assigned hidden layers. Conversation representation is also adapter-owned: Qwen uses its ChatML envelope; Llama 3 uses one `<|begin_of_text|>` for the conversation plus role header and end-of-turn tokens.
 
 ## Architecture roadmap
 
 | Architecture | FIELD STATION status | Intended adapter |
 |---|---|---|
-| Qwen3 dense | supported; adapter boundary started | `qwen3-dense` / `DenseEngine` |
-| Qwen 3.5/3.8 hybrid | supported; adapter migration next | `qwen35` |
-| Llama dense | next implementation target | `llama-dense` |
+| Qwen3 dense | supported; adapter-owned config/chat | `qwen3-dense` / `DenseEngine` |
+| Qwen 3.5/3.8 hybrid | supported; adapter migration continuing | `qwen35` |
+| Original Llama 3 dense | experimental implementation; numerical + distributed verification next | `llama-dense` / `DenseEngine` |
+| Scaled-RoPE Llama variants | deliberately blocked pending kernel + reference evidence | `llama-dense` |
 | Gemma 2/3 text | planned | `gemma` |
 | Gemma 4 | research | `gemma` / architecture-specific additions |
 | Phi 3/4 | planned | `phi` |
@@ -74,20 +82,21 @@ The finished adapter boundary will own model detection, config reconstruction, t
 models/
   qwen/    model.gguf (Qwen3-0.6B Q8_0), model-q4.gguf, tokenizer.json, config.json
   qwen17/  model.gguf, tokenizer.json, config.json
+  llama3/  model.gguf (Meta-Llama-3-8B-Instruct Q4_0; local/reference only)
   q38/     model.gguf (Qwen 3.8 27B Q4_0)
   model/   SmolLM2-135M: model.safetensors, tokenizer.json, config.json
 ```
 
-The external JSON files in the test layout remain useful to reference tests; the browser Qwen3 GGUF runtime no longer requires them.
+The external JSON files in the test layout remain useful to reference tests; browser dense-GGUF execution derives its runtime description and tokenizer from the GGUF itself.
 
 ## Adding a model today
 
 1. Use **Inspect another GGUF…** or `engine/model-capabilities.js` to inspect metadata and tensor types before downloading the model body.
 2. Confirm the architecture maps to an implemented adapter and that the adapter can reconstruct every runtime dimension it needs.
-3. Confirm tensor names and dimensions against the architecture's loader/name map.
+3. Confirm tensor names, rotary layout and dimensions against the architecture's loader/name map.
 4. For a built-in catalogue entry, use a reviewed/pinned model source rather than relying permanently on `resolve/main`.
 5. Generate a deterministic golden with `tests/reference/` and compare it with a trusted reference implementation such as llama.cpp.
 6. Verify one-device output, then two- and three-device splits.
 7. Record load time, memory and tok/s in `docs/bench-log.md`.
 
-Do not label a model supported merely because its GGUF header parses. A new architecture is supported only once its forward pass, chat/tokenizer behaviour and distributed split have reference evidence.
+Do not label a model verified merely because its GGUF header parses or it generates plausible text. A new architecture is verified only once its forward pass, chat/tokenizer behaviour and distributed split have reference evidence.
