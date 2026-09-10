@@ -10,6 +10,15 @@ import { readFile, writeFile } from "node:fs/promises";
 export async function patchFieldRuntime(path) {
   let source = await readFile(path, "utf8");
 
+  const importMarker = 'import { makeLink, attachWire, wireReady, sendFrame } from "./room/transport.js";';
+  if (!source.includes(importMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: transport import marker changed upstream");
+  }
+  source = source.replace(
+    importMarker,
+    `${importMarker}\nimport { buildConversationPrompt, generationFinishReason } from "./field-station/conversation.js";`,
+  );
+
   const streamMarker = '  const streamOpts = { pace: isPhone ? 300 : 0, staging: isPhone ? 2 * 2 ** 20 : 8 * 2 ** 20 };';
   if (!source.includes(streamMarker)) {
     throw new Error("FIELD STATION runtime patch failed: phone stream pacing marker changed upstream");
@@ -57,6 +66,51 @@ export async function patchFieldRuntime(path) {
     `  ai.myPct = 0;\n  ai.prog = { [myName]: 0 }; ai.progAt = { [myName]: Date.now() };\n  ai.loadStartedAt = performance.now();\n  ai.loadCacheStart = cacheHits;\n  ai.loadNetworkRequests = 0;`,
   );
 
+  const aiStateMarker = `  waiters: new Map(),    // pos -> resolve(hiddenF32) for host awaiting return\n  busy: false,\n};`;
+  if (!source.includes(aiStateMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: AI state marker changed upstream");
+  }
+  source = source.replace(
+    aiStateMarker,
+    `  waiters: new Map(),    // pos -> resolve(hiddenF32) for host awaiting return\n  busy: false,\n  // FIELD STATION: canonical room conversation lives in host memory only. It is rebuilt\n  // into the model prompt each turn and disappears when the host closes the room.\n  history: [],\n  contextMeta: { usedTurns: 0, droppedTurns: 0, promptTokens: 0 },\n};`,
+  );
+
+  const crumbMarker = 'function crumb(s) { try { localStorage.setItem("swarm-crumb", JSON.stringify({ s, t: Date.now(), mem: performance.memory?.usedJSHeapSize })); } catch {} }';
+  if (!source.includes(crumbMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: breadcrumb marker changed upstream");
+  }
+  source = source.replace(
+    crumbMarker,
+    `function crumb(s) {\n  const mem = performance.memory?.usedJSHeapSize;\n  try { localStorage.setItem("swarm-crumb", JSON.stringify({ s, t: Date.now(), mem })); } catch {}\n  window.fieldStationDiagnostics?.record("runtime", { status: s, heapBytes: mem || null });\n}`,
+  );
+
+  const promptMarker = `  const V = ai.tok.vocab;\n  const imStart = V["<|im_start|>"], imEnd = V["<|im_end|>"], eot = V["<|endoftext|>"];\n  const ids = [imStart, ...ai.tok.encode("user\\n" + text), imEnd,\n    ...ai.tok.encode("\\n"), imStart, ...ai.tok.encode("assistant\\n")];\n  // qwen3 thinking models: pre-close the think block so answers come straight\n  if (V["<think>"] !== undefined && V["</think>"] !== undefined)\n    ids.push(V["<think>"], ...ai.tok.encode("\\n\\n"), V["</think>"], ...ai.tok.encode("\\n\\n"));`;
+  if (!source.includes(promptMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: generation prompt marker changed upstream");
+  }
+  source = source.replace(
+    promptMarker,
+    `  const V = ai.tok.vocab;\n  const imEnd = V["<|im_end|>"], eot = V["<|endoftext|>"];\n  const built = buildConversationPrompt({\n    tok: ai.tok, vocab: V, history: ai.history || [], currentText: text,\n    maxSeq: MAX_SEQ, minRoom: MIN_ROOM,\n  });\n  const ids = built.ids;\n  ai.contextMeta = { usedTurns: built.usedTurns, droppedTurns: built.droppedTurns, promptTokens: ids.length };\n  const contextLine = $("context-line");\n  if (contextLine) contextLine.textContent = \`CONTEXT / \${built.usedTurns} prior turn\${built.usedTurns === 1 ? "" : "s"} · \${ids.length}/\${MAX_SEQ} prompt tok\${built.droppedTurns ? \` · \${built.droppedTurns} older dropped\` : ""}\`;\n  broadcastAll({ t: "ai-context", ...ai.contextMeta, maxSeq: MAX_SEQ });\n  window.fieldStationDiagnostics?.record("generation:start", {\n    promptTokens: ids.length, usedTurns: built.usedTurns, droppedTurns: built.droppedTurns,\n    devices: ai.chain.length + 1, model: $("ai-model")?.value || null,\n  });`,
+  );
+
+  const statsMarker = `    const secs = (performance.now() - t0) / 1000;\n    const stats = \`${'${count}'} tok · ${'${(count / secs).toFixed(1)}'} tok/s · ${'${ai.chain.length + 1}'} devices${'${capped ? ` · stopped: context full (${MAX_SEQ} tokens)` : ""}'}\`;\n    chatBotEnd(reply, stats);\n    sendChat({ t: "ai-gendone", stats }, askerId);`;
+  if (!source.includes(statsMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: generation stats marker changed upstream");
+  }
+  source = source.replace(
+    statsMarker,
+    `    const secs = (performance.now() - t0) / 1000;\n    const finish = generationFinishReason({ count, maxNew, maxSeq: MAX_SEQ, promptTokens: ids.length, contextCapped: capped });\n    ai.history = [...(ai.history || []), { user: text, assistant: reply }].slice(-24);\n    const stats = \`${'${count}'} tok · ${'${(count / secs).toFixed(1)}'} tok/s · ${'${ai.chain.length + 1}'} devices · finish: ${'${finish}'}\`;\n    chatBotEnd(reply, stats);\n    sendChat({ t: "ai-gendone", stats }, askerId);\n    const contextLine = $("context-line");\n    if (contextLine) contextLine.textContent = \`CONTEXT / \${ai.history.length} room turn\${ai.history.length === 1 ? "" : "s"} · last prompt \${ids.length}/\${MAX_SEQ} tok\`;\n    broadcastAll({ t: "ai-context", turns: ai.history.length, promptTokens: ids.length, usedTurns: built.usedTurns, droppedTurns: built.droppedTurns, maxSeq: MAX_SEQ });\n    window.fieldStationDiagnostics?.record("generation:end", {\n      outputTokens: count, tokensPerSecond: Number((count / secs).toFixed(2)), finish,\n      promptTokens: ids.length, historyTurns: ai.history.length, prefillSeconds: Number(((t0 - tPre) / 1000).toFixed(2)),\n    });`,
+  );
+
+  const contextCaseMarker = `    case "ai-visibility":\n      ai.visibility = d.mode;\n      toast(d.mode === "all" ? "the host shows the chat to everyone" : d.mode === "host" ? "the host keeps the chat private" : "the host shows each answer to whoever asked");\n      break;`;
+  if (!source.includes(contextCaseMarker)) {
+    throw new Error("FIELD STATION runtime patch failed: visibility case marker changed upstream");
+  }
+  source = source.replace(
+    contextCaseMarker,
+    `${contextCaseMarker}\n    case "ai-context": {\n      const contextLine = $("context-line");\n      if (contextLine) {\n        const turns = d.turns ?? d.usedTurns ?? 0;\n        contextLine.textContent = \`CONTEXT / \${turns} room turn\${turns === 1 ? "" : "s"} · \${d.promptTokens || 0}/\${d.maxSeq || MAX_SEQ} prompt tok\${d.droppedTurns ? \` · \${d.droppedTurns} older dropped\` : ""}\`;\n      }\n      break;\n    }`,
+  );
+
   await writeFile(path, source);
 }
 
@@ -64,5 +118,5 @@ if (process.argv[1] && new URL(import.meta.url).pathname.endsWith(process.argv[1
   const target = process.argv[2];
   if (!target) throw new Error("Usage: node scripts/patch-field-runtime.mjs <room.js>");
   await patchFieldRuntime(target);
-  console.log("FIELD STATION runtime patches applied: fast independent downloads + load telemetry.");
+  console.log("FIELD STATION runtime patches applied: downloads, conversation context, finish reasons and diagnostics.");
 }
