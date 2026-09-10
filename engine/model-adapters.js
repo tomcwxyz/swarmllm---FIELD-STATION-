@@ -27,13 +27,20 @@ function tensorDim(G, name, axis) {
   return Array.isArray(shape) && shape.length > axis ? finitePositive(shape[axis]) : null;
 }
 
+function llamaRopeScalingType(meta) {
+  const value = meta?.["llama.rope.scaling.type"];
+  if (value === undefined || value === null) return null;
+  const type = String(value).trim().toLowerCase();
+  return type && type !== "none" ? type : null;
+}
+
 /**
  * Build the DenseEngine config from a dense GGUF header.
  *
- * Qwen3 and Llama 3 share the DenseEngine's RMSNorm + GQA + SwiGLU execution
- * shape. Shape fallbacks are deliberate: some converters omit optional metadata
- * such as attention.key_length even though the exact dimensions are already
- * present in the tensor index.
+ * Qwen3 and original Llama 3 share the DenseEngine's RMSNorm + GQA + SwiGLU
+ * execution shape. Shape fallbacks are deliberate: some converters omit optional
+ * metadata such as attention.key_length even though the exact dimensions are
+ * already present in the tensor index.
  */
 export function denseConfigFromGGUF(G) {
   const meta = G?.meta || {};
@@ -41,6 +48,10 @@ export function denseConfigFromGGUF(G) {
   const adapter = MODEL_ADAPTERS[architecture];
   if (!adapter || adapter.engine !== "dense" || adapter.status !== "supported") {
     throw new Error(`GGUF architecture ${architecture} does not have a FIELD STATION dense adapter`);
+  }
+  if (architecture === "llama") {
+    const scaling = llamaRopeScalingType(meta);
+    if (scaling) throw new Error(`Llama RoPE scaling ${scaling} is not implemented by FIELD STATION yet`);
   }
 
   const prefix = adapter.metaPrefix || architecture;
