@@ -1,0 +1,24 @@
+/* FIELD STATION · model inspection / custom GGUF */
+#model-preflight-toggle{
+  width:max-content;padding:0;border:0;background:transparent;color:var(--fs-accent);
+  font:400 var(--fs-text-xs)/1.4 var(--fs-font-mono);text-decoration:underline;text-underline-offset:.25em;cursor:pointer
+}
+#model-preflight-toggle:hover{color:var(--fs-ink)}
+#model-preflight{display:grid;gap:var(--fs-space-3);padding:var(--fs-space-3) 0;border-top:var(--fs-border);border-bottom:var(--fs-border)}
+#model-preflight[hidden]{display:none}
+#model-preflight label{color:var(--fs-muted);font:500 var(--fs-text-xs)/1 var(--fs-font-mono);letter-spacing:var(--fs-tracking-label);text-transform:uppercase}
+#model-url{width:100%;min-width:0;padding:.62rem .55rem;border:var(--fs-border);border-radius:0;background:transparent;color:var(--fs-ink);font:400 var(--fs-text-xs)/1.35 var(--fs-font-mono);outline:none}
+#model-url:focus{border-color:var(--fs-accent)}
+.model-preflight-actions{display:flex;gap:var(--fs-space-2);flex-wrap:wrap}
+.model-preflight-actions button{padding:.58rem .68rem;border:var(--fs-border-ink);border-radius:0;background:transparent;color:var(--fs-ink);font:500 var(--fs-text-xs)/1 var(--fs-font-mono);letter-spacing:var(--fs-tracking-label);text-transform:uppercase;cursor:pointer}
+.model-preflight-actions button:hover:not(:disabled){border-color:var(--fs-accent);color:var(--fs-accent)}
+.model-preflight-actions button:disabled{opacity:.4;cursor:default}
+#model-use{background:var(--fs-ink);color:var(--fs-paper)}
+#model-use:hover:not(:disabled){background:var(--fs-accent);color:var(--fs-paper)}
+#model-report{display:grid;gap:.35rem;color:var(--fs-muted);font:400 var(--fs-text-xs)/1.5 var(--fs-font-mono)}
+#model-report[data-tone="ok"] .model-verdict{color:var(--fs-signal-green)}
+#model-report[data-tone="warn"] .model-verdict{color:var(--fs-signal-orange)}
+#model-report[data-tone="bad"] .model-verdict{color:var(--fs-signal-red)}
+.model-verdict{font-weight:500;color:var(--fs-ink)}
+.model-types{overflow-wrap:anywhere}
+.model-preflight-note{color:var(--fs-muted);font:400 var(--fs-text-xs)/1.45 var(--fs-font-mono)}
