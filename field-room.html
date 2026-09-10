@@ -1,10 +1,13 @@
 <!doctype html>
-<html lang="en-GB">
+<html lang="en-GB" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="description" content="FIELD STATION experiment: pool several ordinary devices into one local-first AI model runtime.">
+<meta name="description" content="FIELD STATION collective compute experiment: pool several ordinary devices into one local-first AI model runtime.">
 <meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
+<link rel="preconnect" href="https://huggingface.co" crossorigin>
+<link rel="dns-prefetch" href="https://huggingface.co">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/field-station.css">
@@ -13,22 +16,23 @@
 </head>
 <body class="room-body">
 <header class="room-header">
-  <a class="fs-wordmark" href="/" aria-label="FIELD STATION home"><span>FIELD</span><span class="slash">/</span><span>STATION</span></a>
-  <span class="mode">experiment · collective compute</span>
+  <a class="fs-wordmark" href="/" aria-label="FIELD STATION home">FIELD STATION <span class="fs-mark">· COLLECTIVE COMPUTE</span></a>
+  <span class="mode">EXPERIMENT · DISTRIBUTED INFERENCE</span>
   <span class="spacer"></span>
   <button id="room-badge" type="button" title="Copy protected invitation link"></button>
+  <button id="theme-toggle" class="fs-theme-toggle" type="button">Light</button>
 </header>
 
 <div id="privacy-strip" role="note">
-  <span class="signal">Public experiment</span>
+  <span class="signal">OPEN COMPUTE / PRIVATE DATA: NO</span>
   <span><b>Do not enter private or sensitive information.</b> Every participating device helps compute the answer. WebRTC encrypts traffic in transit, but model activations should be treated as visible to room participants.</span>
 </div>
 
 <section id="join-screen">
   <div class="join-card">
-    <div class="fs-label">Experiment 01 · collective compute</div>
-    <h1>Build one AI from <em>several devices.</em></h1>
-    <p>Your browser contributes some of its GPU memory. Add another laptop, phone or tablet and the model is divided between them.</p>
+    <div class="fs-type">EXPERIMENT · COLLECTIVE COMPUTE</div>
+    <h1><span class="lo">Build one AI from</span> several devices.</h1>
+    <p>This browser contributes some of its GPU capacity. Add another laptop, phone or tablet and the model is divided between the participating devices.</p>
 
     <div class="join-fields">
       <input id="name-input" aria-label="Device name" placeholder="Device name — e.g. Tom’s laptop" maxlength="20" autocomplete="off">
@@ -39,9 +43,11 @@
     </div>
 
     <div id="join-pledge">
-      contribute <button class="step" id="gb-minus" type="button" aria-label="Contribute less memory">−</button>
+      <span>GPU CONTRIBUTION</span>
+      <button class="step" id="gb-minus" type="button" aria-label="Contribute less memory">−</button>
       <input id="join-gb" aria-label="GPU memory contribution in GB" type="number" min="1" max="64" step="1" value="1" inputmode="decimal">
-      <button class="step" id="gb-plus" type="button" aria-label="Contribute more memory">+</button> GB GPU memory
+      <button class="step" id="gb-plus" type="button" aria-label="Contribute more memory">+</button>
+      <span>GB</span>
     </div>
 
     <label class="consent">
@@ -50,12 +56,12 @@
     </label>
 
     <div class="join-actions">
-      <button id="create-btn" class="primary" type="button">Create experiment room</button>
+      <button id="create-btn" class="primary" type="button">Create room →</button>
       <button id="join-btn" type="button">Join invited room</button>
     </div>
     <div class="invite-help">
       <span>Have a code but no invitation key?</span>
-      <button id="show-key" type="button">enter key manually</button>
+      <button id="show-key" type="button">Enter key manually</button>
     </div>
     <div id="join-status" aria-live="polite"></div>
   </div>
@@ -63,10 +69,10 @@
 
 <section id="room-screen">
   <aside id="side">
+    <div class="side-k">Room / invitation</div>
     <div id="side-room" title="Copy protected invitation link">
-      <div class="side-k">Experiment room</div>
       <div id="side-code">----</div>
-      <div class="side-hint">click to copy the full protected invitation</div>
+      <div class="side-hint">Select the code to copy the full protected invitation.</div>
     </div>
 
     <div class="side-k">Participating devices</div>
@@ -75,7 +81,7 @@
     <div id="ai-panel">
       <div class="side-k">Shared model</div>
       <div id="ai-head">
-        <span id="ai-title">COLLECTIVE MODEL</span>
+        <span id="ai-title">MODEL / DISTRIBUTED</span>
         <select id="ai-model" aria-label="Model">
           <option value="qwen3-0.6b">Qwen3 0.6B · Q8</option>
           <option value="qwen3-1.7b">Qwen3 1.7B · Q8</option>
@@ -85,20 +91,20 @@
         </select>
         <div id="ai-need">
           <div id="need-bar"><div id="need-fill"></div></div>
-          <div id="need-text">measuring room capacity…</div>
+          <div id="need-text">Measuring room capacity…</div>
         </div>
-        <span id="ai-status">split across the participating devices</span>
-        <button id="ai-start" type="button">Start model</button>
+        <span id="ai-status">Split across the participating devices</span>
+        <button id="ai-start" type="button">Start model →</button>
       </div>
 
       <div id="host-controls" class="host-section" hidden>
-        <label for="ai-visibility">Who sees the rendered chat</label>
+        <label for="ai-visibility">Rendered chat visibility</label>
         <select id="ai-visibility" class="host-select">
-          <option value="all">everyone in the room</option>
-          <option value="host">only this host screen</option>
-          <option value="asker">only whoever asked</option>
+          <option value="all">Everyone in the room</option>
+          <option value="host">Only this host screen</option>
+          <option value="asker">Only whoever asked</option>
         </select>
-        <div class="side-hint">This changes display only. Every device still participates in computation.</div>
+        <div class="side-hint">Display only. Every device still participates in computation.</div>
       </div>
 
       <div id="ai-loading" style="display:none">
@@ -109,27 +115,28 @@
     </div>
 
     <div id="awake" class="side-hint"></div>
-    <div id="cache-line" class="side-hint"><a href="#" id="cache-clear">clear cached model weights</a></div>
-    <div id="cluster-bar">room: <b id="cluster-summary">—</b></div>
+    <div id="cache-line" class="side-hint"><a href="#" id="cache-clear">Clear cached model weights</a></div>
+    <div id="cluster-bar">ROOM / <b id="cluster-summary">—</b></div>
   </aside>
 
   <main id="chatpane">
     <div id="chat-log"></div>
     <div id="ai-empty">Connect enough devices, choose a model, then start the experiment.</div>
     <div id="load-card">
-      <div class="lc-k">DISTRIBUTING MODEL <span id="lc-model"></span></div>
+      <div class="lc-k">MODEL DISTRIBUTION / <span id="lc-model"></span></div>
       <div id="lc-rows"></div>
-      <div class="lc-note">Each device fetches only the layers assigned to it.</div>
+      <div class="lc-note">Each device fetches only the model layers assigned to it. Download rate is shown while loading.</div>
     </div>
     <div id="ai-output"></div>
     <div id="ai-row">
       <input id="ai-prompt" aria-label="Prompt" placeholder="Ask the collective model…" autocomplete="off">
-      <button id="ai-send" type="button">Send</button>
+      <button id="ai-send" type="button">Send →</button>
     </div>
   </main>
 </section>
 
 <div id="toasts" aria-live="polite"></div>
+<script src="/field-station-shell.js"></script>
 <script type="module" src="/field-station-room.js"></script>
 </body>
 </html>
