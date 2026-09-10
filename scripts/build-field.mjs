@@ -5,6 +5,7 @@ import { patchFieldRuntime } from "./patch-field-runtime.mjs";
 import { patchFieldModels } from "./patch-field-models.mjs";
 import { patchFieldModelRuntime } from "./patch-field-model-runtime.mjs";
 import { patchFieldLlamaRuntime } from "./patch-field-llama.mjs";
+import { verifyFieldBuild } from "./verify-field-build.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
@@ -55,4 +56,10 @@ await patchFieldLlamaRuntime(join(dist, "engine", "dense.js"), join(dist, "engin
 // FIELD STATION build portable to any static host and avoids depending on platform routing.
 await cp(join(root, "field-room.html"), join(dist, "room", "index.html"));
 await cp(peerBundle, join(dist, "vendor", "peerjs.min.js"));
+
+// Vercel builds are currently the live independent build gate for this fork. Assert the
+// FIELD STATION-specific Llama behaviour after all patches have been applied so a stale
+// upstream marker or missing adapter cannot silently produce a green deployment.
+await verifyFieldBuild(dist);
+
 console.log("FIELD STATION static build created in dist/ with PeerJS 1.5.4 vendored locally.");
