@@ -34,11 +34,13 @@ export async function patchFieldModelRuntime(roomPath) {
     "external dense config bootstrap",
   );
 
-  const ggufLoadMarker = `  } else if (M.kind === "gguf") {\n    aiStatus("reading model index…");\n    const G = ai.G && ai.GModel === modelKey ? ai.G : await fetchGGUFHeader(M.gguf, false);   // vocab comes from tokenizer.json\n    ai.G = G; ai.GModel = modelKey;\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`;
+  // Match the semantic loader block rather than its status copy: upstream keeps the
+  // status string as a literal unicode escape, which should not be part of our drift guard.
+  const ggufLoadMarker = `    const G = ai.G && ai.GModel === modelKey ? ai.G : await fetchGGUFHeader(M.gguf, false);   // vocab comes from tokenizer.json\n    ai.G = G; ai.GModel = modelKey;\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`;
   source = replaceOnce(
     source,
     ggufLoadMarker,
-    `  } else if (M.kind === "gguf") {\n    aiStatus("reading model index…");\n    const needTok = hasEmbed || hasHead;\n    const cachedOk = ai.G && ai.GModel === modelKey && (!needTok || ai.G.meta["tokenizer.ggml.tokens"]);\n    const G = cachedOk ? ai.G : await fetchGGUFHeader(M.gguf, needTok);\n    ai.G = G; ai.GModel = modelKey;\n    ai.cfg = denseConfigFromGGUF(G);\n    if (needTok) ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`,
+    `    const needTok = hasEmbed || hasHead;\n    const cachedOk = ai.G && ai.GModel === modelKey && (!needTok || ai.G.meta["tokenizer.ggml.tokens"]);\n    const G = cachedOk ? ai.G : await fetchGGUFHeader(M.gguf, needTok);\n    ai.G = G; ai.GModel = modelKey;\n    ai.cfg = denseConfigFromGGUF(G);\n    if (needTok) ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`,
     "dense GGUF shard loader",
   );
 
@@ -46,7 +48,7 @@ export async function patchFieldModelRuntime(roomPath) {
   source = replaceOnce(
     source,
     startConfigMarker,
-    `    } else if (M.kind === "gguf") {\n      aiStatus("reading model index…");\n      ai.G = await fetchGGUFHeader(M.gguf, false);\n      ai.GModel = modelKey;\n      cfg = denseConfigFromGGUF(ai.G);\n      L = cfg.num_hidden_layers;\n    } else {\n      cfg = await (await fetch(M.cfg)).json();\n      L = cfg.num_hidden_layers;\n    }`,
+    `    } else if (M.kind === "gguf") {\n      aiStatus("reading model index\\u2026");\n      ai.G = await fetchGGUFHeader(M.gguf, false);\n      ai.GModel = modelKey;\n      cfg = denseConfigFromGGUF(ai.G);\n      L = cfg.num_hidden_layers;\n    } else {\n      cfg = await (await fetch(M.cfg)).json();\n      L = cfg.num_hidden_layers;\n    }`,
     "host dense model config",
   );
 
