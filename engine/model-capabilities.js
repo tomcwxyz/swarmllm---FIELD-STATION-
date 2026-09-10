@@ -52,6 +52,15 @@ function architectureFromMeta(meta = {}) {
   return raw.replaceAll("-", "").replaceAll("_", "");
 }
 
+function unsupportedArchitectureFeature(meta, architecture) {
+  if (architecture !== "llama") return null;
+  const raw = meta["llama.rope.scaling.type"];
+  if (raw === undefined || raw === null) return null;
+  const type = String(raw).trim().toLowerCase();
+  if (!type || type === "none") return null;
+  return `Llama RoPE scaling ${type} is not implemented`;
+}
+
 function layerCount(meta, architecture, tensors) {
   const exact = meta[`${architecture}.block_count`];
   if (Number.isFinite(exact)) return exact;
@@ -88,6 +97,7 @@ export function inspectGGUFCompatibility(G) {
   const tensors = G?.tensors || {};
   const architecture = architectureFromMeta(meta);
   const arch = ARCHITECTURE_CAPABILITIES[architecture] || { adapter: null, status: "unsupported" };
+  const architectureFeature = unsupportedArchitectureFeature(meta, architecture);
   const counts = new Map();
   let totalBytes = 0;
   let estimatedRuntimeBytes = 0;
@@ -108,7 +118,9 @@ export function inspectGGUFCompatibility(G) {
   }
 
   let status = "unsupported";
-  if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size === 0) {
+  if (architectureFeature) {
+    status = "architecture-needed";
+  } else if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size === 0) {
     status = conversionTypes.size ? "supported-with-conversion" : "supported";
   } else if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size > 0) {
     status = "integration-needed";
@@ -128,13 +140,14 @@ export function inspectGGUFCompatibility(G) {
 
   const reasons = [];
   if (arch.status !== "supported") reasons.push(`architecture ${architecture} is ${arch.status}`);
+  if (architectureFeature) reasons.push(architectureFeature);
   if (unsupportedTypes.size) reasons.push(`unsupported tensor types: ${[...unsupportedTypes].map(ggmlTypeName).join(", ")}`);
   if (codecReadyTypes.size) reasons.push(`codec ready, loader integration pending: ${[...codecReadyTypes].map(ggmlTypeName).join(", ")}`);
   if (conversionTypes.size) reasons.push(`converted to Q8 at load: ${[...conversionTypes].map(ggmlTypeName).join(", ")}`);
 
   return {
     architecture,
-    architectureStatus: arch.status,
+    architectureStatus: architectureFeature ? "feature-pending" : arch.status,
     adapter: arch.adapter,
     status,
     layerCount: layerCount(meta, architecture, tensors),
