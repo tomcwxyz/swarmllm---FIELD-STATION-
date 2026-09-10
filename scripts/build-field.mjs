@@ -26,6 +26,7 @@ for (const path of [
   "field-room.html",
   "field-station-system.css",
   "field-station.css",
+  "field-station-entry.css",
   "field-station-shell.js",
   "field-station-room.js",
   "room.js",
