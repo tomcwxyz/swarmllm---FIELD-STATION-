@@ -62,6 +62,20 @@ function layerCount(meta, architecture, tensors) {
   return max + 1 || null;
 }
 
+function runtimeTensorBytes(tensor) {
+  const n = Number(tensor?.nElems) || 0;
+  if (!n) return 0;
+  // 1D norms/biases are materialised as f32. For matrices, FIELD STATION either keeps
+  // the native GPU representation or converts unsupported quant formats to Q8.
+  if (!Array.isArray(tensor.shape) || tensor.shape.length !== 2) return n * 4;
+  if (tensor.ggmlType === GGML_Q4_0) return n / 2 + (n / 32) * 2; // nibbles + f16 scale/block
+  if (tensor.ggmlType === GGML_Q8_0) return n + (n / 32) * 2;     // int8 + f16 scale/block
+  if (tensor.ggmlType === GGML_F32 || tensor.ggmlType === GGML_F16) return n * 4;
+  if (QUANT_CAPABILITIES[tensor.ggmlType]?.status === "supported-with-conversion")
+    return n + (n / 32) * 2; // current conversion target is Q8
+  return n * 4;
+}
+
 /**
  * Inspect a parsed GGUF header without fetching tensor bodies.
  * Returns an explicit architecture/quantisation verdict suitable for UI.
@@ -73,6 +87,7 @@ export function inspectGGUFCompatibility(G) {
   const arch = ARCHITECTURE_CAPABILITIES[architecture] || { adapter: null, status: "unsupported" };
   const counts = new Map();
   let totalBytes = 0;
+  let estimatedRuntimeBytes = 0;
   const unsupportedTypes = new Set();
   const conversionTypes = new Set();
   const codecReadyTypes = new Set();
@@ -86,6 +101,7 @@ export function inspectGGUFCompatibility(G) {
     else if (cap.status === "codec-ready") codecReadyTypes.add(type);
     const bytes = tensorTypeBytes(type, tensor.nElems);
     if (bytes >= 0) totalBytes += bytes;
+    estimatedRuntimeBytes += runtimeTensorBytes(tensor);
   }
 
   let status = "unsupported";
@@ -122,6 +138,7 @@ export function inspectGGUFCompatibility(G) {
     tensorCount: Object.keys(tensors).length,
     tensorTypes,
     totalTensorBytes: totalBytes,
+    estimatedRuntimeBytes,
     reasons,
   };
 }
