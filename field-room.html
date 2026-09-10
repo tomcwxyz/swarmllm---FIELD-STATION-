@@ -30,17 +30,19 @@
 
 <section id="join-screen">
   <div class="join-card">
-    <div class="fs-type">EXPERIMENT · COLLECTIVE COMPUTE</div>
-    <h1><span class="lo">Build one AI from</span> several devices.</h1>
-    <p>This browser contributes some of its GPU capacity. Add another laptop, phone or tablet and the model is divided between the participating devices.</p>
+    <div id="entry-type" class="fs-type">START · COLLECTIVE COMPUTE</div>
+    <h1 id="entry-title"><span class="lo">Create a room and</span> invite other devices.</h1>
+    <p id="entry-lede">A protected invitation link will be created automatically. Share that link with the other people or devices you want to include.</p>
 
     <div class="join-fields">
-      <input id="name-input" aria-label="Device name" placeholder="Device name — e.g. Tom’s laptop" maxlength="20" autocomplete="off">
-      <input id="code-input" aria-label="Room code" placeholder="Room code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false">
-      <div id="key-wrap" hidden>
-        <input id="key-input" aria-label="Invitation key" placeholder="Invitation key" maxlength="32" autocomplete="off" spellcheck="false">
-      </div>
+      <input id="name-input" aria-label="Device name" placeholder="Name this device — optional" maxlength="20" autocomplete="off">
     </div>
+
+    <!-- SwarmLLM still uses an internal short label to derive its host identity. FIELD STATION
+         keeps both pieces hidden: people create or join with the protected invitation link. -->
+    <input id="code-input" type="hidden" autocomplete="off">
+    <input id="key-input" type="hidden" autocomplete="off">
+    <input id="safety-check" type="checkbox" hidden>
 
     <div id="join-pledge">
       <span>GPU CONTRIBUTION</span>
@@ -50,19 +52,16 @@
       <span>GB</span>
     </div>
 
-    <label class="consent">
-      <input id="safety-check" type="checkbox">
-      <span>I understand this is an experiment: prompts are not confidential, other participants are not independently verified, and this may use significant GPU, memory, bandwidth and battery.</span>
-    </label>
+    <div class="entry-notice" role="note">
+      <div class="fs-type">BEFORE YOU CONTINUE</div>
+      <p><strong>This is an experiment, not a private AI service.</strong> Prompts are not confidential. Other participating devices help compute the answer and are not independently verified. Joining can use significant GPU, memory, bandwidth and battery.</p>
+    </div>
 
     <div class="join-actions">
-      <button id="create-btn" class="primary" type="button">Create room →</button>
-      <button id="join-btn" type="button">Join invited room</button>
+      <button id="create-btn" class="primary" type="button">I understand — create room →</button>
+      <button id="join-btn" class="primary" type="button" hidden>I understand — join room →</button>
     </div>
-    <div class="invite-help">
-      <span>Have a code but no invitation key?</span>
-      <button id="show-key" type="button">Enter key manually</button>
-    </div>
+    <div id="entry-action-note" class="entry-action-note">By creating the room, you acknowledge the notice above.</div>
     <div id="join-status" aria-live="polite"></div>
   </div>
 </section>
@@ -72,7 +71,7 @@
     <div class="side-k">Room / invitation</div>
     <div id="side-room" title="Copy protected invitation link">
       <div id="side-code">----</div>
-      <div class="side-hint">Select the code to copy the full protected invitation.</div>
+      <div class="side-hint">Select the room label to copy the protected invitation link.</div>
     </div>
 
     <div class="side-k">Participating devices</div>
