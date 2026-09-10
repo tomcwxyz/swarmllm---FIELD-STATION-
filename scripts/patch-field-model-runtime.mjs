@@ -22,7 +22,7 @@ export async function patchFieldModelRuntime(roomPath) {
   source = replaceOnce(
     source,
     importMarker,
-    `${importMarker}\nimport { denseConfigFromGGUF } from "./engine/model-adapters.js";\n\n// FIELD STATION custom models are ephemeral room descriptors, not trusted config blobs.\n// Only the small set of fields needed to identify a remote GGUF crosses the control channel.\nfunction fieldModelDescriptor(modelKey) {\n  const model = MODELS[modelKey];\n  if (!model?.fieldCustom || model.kind !== "gguf") return null;\n  return {\n    label: String(model.label || "Custom GGUF").slice(0, 160),\n    kind: "gguf",\n    gguf: String(model.gguf || ""),\n    fieldCustom: true,\n  };\n}\n\nfunction installFieldModel(modelKey, descriptor, needGB) {\n  if (!modelKey || !descriptor?.fieldCustom || descriptor.kind !== "gguf") return false;\n  let url;\n  try { url = new URL(String(descriptor.gguf || "")); } catch { return false; }\n  if (url.protocol !== "https:" || !/\\.gguf(?:$|[?#])/i.test(url.href)) return false;\n  const label = String(descriptor.label || "Custom GGUF").slice(0, 160);\n  MODELS[modelKey] = { label, kind: "gguf", gguf: url.toString(), fieldCustom: true };\n  const gb = Number(needGB);\n  if (Number.isFinite(gb) && gb >= 0.2 && gb <= 128) NEED_GB[modelKey] = gb;\n  const select = $("ai-model");\n  if (select && ![...select.options].some((option) => option.value === modelKey)) {\n    const option = document.createElement("option");\n    option.value = modelKey; option.textContent = label; select.appendChild(option);\n  }\n  return true;\n}`,
+    `${importMarker}\nimport { denseConfigFromGGUF, chatRuntimeFromGGUF, chatRuntimeForStyle } from "./engine/model-adapters.js";\n\n// FIELD STATION custom models are ephemeral room descriptors, not trusted config blobs.\n// Only the small set of fields needed to identify a remote GGUF crosses the control channel.\nfunction fieldModelDescriptor(modelKey) {\n  const model = MODELS[modelKey];\n  if (!model?.fieldCustom || model.kind !== "gguf") return null;\n  return {\n    label: String(model.label || "Custom GGUF").slice(0, 160),\n    kind: "gguf",\n    gguf: String(model.gguf || ""),\n    fieldCustom: true,\n  };\n}\n\nfunction installFieldModel(modelKey, descriptor, needGB) {\n  if (!modelKey || !descriptor?.fieldCustom || descriptor.kind !== "gguf") return false;\n  let url;\n  try { url = new URL(String(descriptor.gguf || "")); } catch { return false; }\n  if (url.protocol !== "https:" || !/\\.gguf(?:$|[?#])/i.test(url.href)) return false;\n  const label = String(descriptor.label || "Custom GGUF").slice(0, 160);\n  MODELS[modelKey] = { label, kind: "gguf", gguf: url.toString(), fieldCustom: true };\n  const gb = Number(needGB);\n  if (Number.isFinite(gb) && gb >= 0.2 && gb <= 128) NEED_GB[modelKey] = gb;\n  const select = $("ai-model");\n  if (select && ![...select.options].some((option) => option.value === modelKey)) {\n    const option = document.createElement("option");\n    option.value = modelKey; option.textContent = label; select.appendChild(option);\n  }\n  return true;\n}`,
     "model catalogue import",
   );
 
@@ -30,7 +30,7 @@ export async function patchFieldModelRuntime(roomPath) {
   source = replaceOnce(
     source,
     externalConfigMarker,
-    `  // Safetensors still needs its external config/tokenizer. Dense GGUF is\n  // self-describing and is initialised from its own metadata below.\n  if (M.kind === "safetensors" && M.cfg) {\n    ai.cfg = await (await fetch(M.cfg)).json();\n    if (hasEmbed || hasHead) ai.tok = makeTokenizer(await (await fetch(M.tok)).json());\n  }`,
+    `  // Safetensors still needs its external config/tokenizer. Dense GGUF is\n  // self-describing and is initialised from its own metadata below.\n  if (M.kind === "safetensors" && M.cfg) {\n    ai.cfg = await (await fetch(M.cfg)).json();\n    if (hasEmbed || hasHead) {\n      ai.tok = makeTokenizer(await (await fetch(M.tok)).json());\n      // SmolLM's existing catalogue path uses the same ChatML envelope; keeping this\n      // explicit makes it a migration fallback rather than a generation-loop assumption.\n      ai.chat = chatRuntimeForStyle("chatml-qwen", ai.tok);\n    }\n  }`,
     "external dense config bootstrap",
   );
 
@@ -40,8 +40,16 @@ export async function patchFieldModelRuntime(roomPath) {
   source = replaceOnce(
     source,
     ggufLoadMarker,
-    `    const needTok = hasEmbed || hasHead;\n    const cachedOk = ai.G && ai.GModel === modelKey && (!needTok || ai.G.meta["tokenizer.ggml.tokens"]);\n    const G = cachedOk ? ai.G : await fetchGGUFHeader(M.gguf, needTok);\n    ai.G = G; ai.GModel = modelKey;\n    ai.cfg = denseConfigFromGGUF(G);\n    if (needTok) ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`,
+    `    const needTok = hasEmbed || hasHead;\n    const cachedOk = ai.G && ai.GModel === modelKey && (!needTok || ai.G.meta["tokenizer.ggml.tokens"]);\n    const G = cachedOk ? ai.G : await fetchGGUFHeader(M.gguf, needTok);\n    ai.G = G; ai.GModel = modelKey;\n    ai.cfg = denseConfigFromGGUF(G);\n    if (needTok) {\n      ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));\n      ai.chat = chatRuntimeFromGGUF(G, ai.tok);\n    }\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`,
     "dense GGUF shard loader",
+  );
+
+  const hybridTokenizerMarker = `    if (hasEmbed || hasHead) ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));`;
+  source = replaceOnce(
+    source,
+    hybridTokenizerMarker,
+    `    if (hasEmbed || hasHead) {\n      ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));\n      ai.chat = chatRuntimeFromGGUF(G, ai.tok);\n    }`,
+    "hybrid GGUF chat formatter",
   );
 
   const startConfigMarker = `    } else {\n      cfg = await (await fetch(M.cfg)).json();\n      L = cfg.num_hidden_layers;\n    }`;
