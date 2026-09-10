@@ -38,9 +38,8 @@ function llamaRopeScalingType(meta) {
  * Build the DenseEngine config from a dense GGUF header.
  *
  * Qwen3 and original Llama 3 share the DenseEngine's RMSNorm + GQA + SwiGLU
- * execution shape. Shape fallbacks are deliberate: some converters omit optional
- * metadata such as attention.key_length even though the exact dimensions are
- * already present in the tensor index.
+ * execution shape. Llama GGUF conversion permutes Q/K rows for interleaved RoPE,
+ * so the adapter also owns the RoPE layout expected by the runtime.
  */
 export function denseConfigFromGGUF(G) {
   const meta = G?.meta || {};
@@ -87,6 +86,7 @@ export function denseConfigFromGGUF(G) {
     vocab_size: required(vocab, `${prefix}.vocab_size / embedding tensor rows`),
     rms_norm_eps: required(rms, `${prefix}.attention.layer_norm_rms_epsilon`),
     rope_theta: required(rope, `${prefix}.rope.freq_base`),
+    rope_interleaved: adapter.ropeLayout === "interleaved",
   };
 
   const context = finitePositive(meta[`${prefix}.context_length`]);
@@ -126,8 +126,6 @@ export function chatRuntimeForStyle(style, tok) {
       },
       assistantPrefix() {
         const ids = [imStart, ...tok.encode("assistant\n")];
-        // Qwen3 thinking models default to a visible reasoning block. FIELD STATION has
-        // always pre-closed it so the room displays the answer rather than model scratchwork.
         if (Number.isInteger(think) && Number.isInteger(thinkEnd))
           ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
         return ids;
@@ -149,7 +147,6 @@ export function chatRuntimeForStyle(style, tok) {
 
     return Object.freeze({
       id: "llama3-header",
-      // Llama 3 uses one BOS token for the whole conversation, not one per turn.
       conversationPrefix() { return [bos]; },
       encodeMessage(role, content) {
         return [...header(role), ...tok.encode(String(content ?? "")), eot];
@@ -172,10 +169,7 @@ export function chatRuntimeFromGGUF(G, tok) {
   return chatRuntimeForStyle(adapter.promptStyle, tok);
 }
 
-/**
- * Small, explicit adapter contract. Planned entries are visible so capability
- * preflight can distinguish "architecture work" from an unknown model family.
- */
+/** Small, explicit adapter contract. */
 export const MODEL_ADAPTERS = Object.freeze({
   qwen3: Object.freeze({
     id: "qwen3-dense",
@@ -184,6 +178,7 @@ export const MODEL_ADAPTERS = Object.freeze({
     engine: "dense",
     status: "supported",
     promptStyle: "chatml-qwen",
+    ropeLayout: "half",
     defaultRopeTheta: 1_000_000,
     configFromGGUF: denseConfigFromGGUF,
   }),
@@ -195,10 +190,9 @@ export const MODEL_ADAPTERS = Object.freeze({
     status: "supported",
     promptStyle: "chatml-qwen",
   }),
-  // Initial Llama support deliberately targets the original Llama 3 dense family.
-  // Llama 3.1/3.2 GGUFs can advertise additional RoPE scaling metadata that the
-  // DenseEngine does not yet implement; those must not be promoted to a built-in
-  // FIELD STATION model until their scaled-RoPE path has reference evidence.
+  // llama.cpp's Llama conversion permutes Q/K rows so adjacent values form each
+  // rotary pair. Keep those weights untouched and make the runtime use the same
+  // interleaved layout. Scaled-RoPE Llama variants still fail closed above.
   llama: Object.freeze({
     id: "llama-dense",
     architecture: "llama",
@@ -206,6 +200,7 @@ export const MODEL_ADAPTERS = Object.freeze({
     engine: "dense",
     status: "supported",
     promptStyle: "llama3-header",
+    ropeLayout: "interleaved",
     defaultRopeTheta: 500_000,
     configFromGGUF: denseConfigFromGGUF,
   }),
