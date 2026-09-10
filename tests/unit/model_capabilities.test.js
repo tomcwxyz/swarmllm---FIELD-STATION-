@@ -38,7 +38,7 @@ Deno.test("GGUF preflight separates architecture support from quant support", ()
   assertEquals(report.architecture, "qwen3");
   assertEquals(report.adapter, "dense");
   assertEquals(report.layerCount, 28);
-  assertEquals(report.status, "integration-needed");
+  assertEquals(report.status, "supported-with-conversion");
   assert(report.reasons.some((r) => r.includes("Q4_K")));
   assert(report.reasons.some((r) => r.includes("Q6_K")));
   assertEquals(report.totalTensorBytes, 144 + 210);
