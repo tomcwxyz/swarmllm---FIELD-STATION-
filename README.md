@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="favicon.svg" width="76" alt="FIELD STATION contour mark">
+  <img src="favicon.svg" width="76" alt="Shared AI mark">
 </p>
-<h1 align="center">FIELD STATION</h1>
-<p align="center"><b>Collective compute for real-world questions.</b></p>
-<p align="center">Pool ordinary devices together to run open language models in the browser.</p>
+<h1 align="center">Shared AI</h1>
+<p align="center"><b>Can several ordinary devices become one AI computer?</b></p>
+<p align="center">A <a href="https://fieldstation.xyz/">FIELD STATION</a> experiment in collective browser inference.</p>
 
 <p align="center">
   <a href="docs/architecture.md">Architecture</a> ·
@@ -19,40 +19,38 @@
   <img alt="status" src="https://img.shields.io/badge/status-experimental-f06f8b">
 </p>
 
-## What is FIELD STATION?
+## What is Shared AI?
 
-FIELD STATION is an experimental, browser-based tool for **collective AI compute**. A room of laptops, desktops and other WebGPU-capable devices can pool memory and GPU work so that, together, they can run a model that may be uncomfortable or impossible for one device alone.
+**Shared AI** is an experiment from [FIELD STATION](https://fieldstation.xyz/), the action lab exploring the future of work, the reach of technology and the shape of society.
 
-There is no account and no inference server. Model layers are distributed across participating browsers and intermediate activations move directly between them over WebRTC.
+The experiment asks a deliberately simple question:
 
-FIELD STATION began as a fork of [SwarmLLM](https://github.com/Nehanth/swarmllm), created by Nehanth Narendrula. SwarmLLM supplied the core idea and a substantial part of the distributed browser inference engine that remains underneath this project.
+> **What becomes possible when several ordinary devices can become one AI computer?**
 
-It is now a substantially separate tool rather than a lightly modified SwarmLLM demo. FIELD STATION has its own interface, room and safety model, model-compatibility layer, local Sources workflow, diagnostics, experiment protocols, build verification and roadmap. We continue to credit SwarmLLM wherever inherited work remains and do not treat upstream benchmark results as FIELD STATION results.
+A room of laptops, desktops, phones and other WebGPU-capable devices can pool memory and GPU work so that, together, they can run an open language model that may be uncomfortable or impossible for one device alone.
 
-### The question behind it
+There is no inference server doing the thinking in the middle. Model layers are distributed across participating browsers and intermediate activations move directly between them over WebRTC.
 
-> What becomes possible when several ordinary devices can become one AI computer?
+Shared AI began from [SwarmLLM](https://github.com/Nehanth/swarmllm), created by Nehanth Narendrula. SwarmLLM supplied the core distributed-browser inference idea and a substantial part of the engine that remains underneath this project. The experiment has since diverged substantially, adding its own interface, model-compatibility layer, local Sources workflow, diagnostics, safety framing, field protocols and large-model experiments.
 
-The aim is not simply to run ever-bigger models. FIELD STATION is a place to test collective compute in realistic settings: different hardware, open models, local files and datasets, imperfect networks, and people trying to answer actual questions.
-
-The current edge experiment makes that question literal: **can a room of ordinary browser devices collectively run Llama 3 70B Q4_0 — roughly 40 GB of model — when none of those devices would comfortably run it alone?** See the [70B field protocol](docs/experiments/llama3-70b.md).
+The current edge test makes the question literal: **can a room of ordinary browser devices collectively run Llama 3 70B Q4_0 — roughly 40 GB of model — when none of those devices would comfortably run it alone?** See the [70B field protocol](docs/experiments/llama3-70b.md).
 
 ## What it can do now
 
 - **Distributed browser inference.** Split model layers across several devices; each participant contributes part of the compute and memory.
 - **Run locally on one device too.** The same room can be used as a solo WebGPU runtime for comparison and testing.
-- **Use multiple model families.** Qwen models remain available from the SwarmLLM base; FIELD STATION adds a model-adapter layer and experimental Llama 3 / Llama 3.2 support.
-- **Attempt room-scale Llama.** Llama 3 70B Q4_0 is now an explicit collective-compute target, with 80 layers distributed by pledged capacity, K/V-cache-aware planning and a capable-host check for the large output head.
+- **Use multiple model families.** Qwen models remain available from the SwarmLLM base; Shared AI adds experimental Llama 3 / Llama 3.2 support and a model-adapter layer.
+- **Attempt room-scale Llama.** Llama 3 70B Q4_0 is an explicit collective-compute target, with 80 layers distributed by pledged capacity, K/V-cache-aware planning and a capable-host check for the large output head.
 - **Bring local Sources.** TXT, Markdown, JSON and CSV files are parsed in the browser. The full file stays on the device that selected it; only retrieved material enters the distributed inference prompt.
 - **Understand CSVs as datasets.** CSV Sources are profiled locally for row/column counts, inferred types, missingness, numeric summaries, date ranges and common categorical values, with matching rows retrieved for specific questions.
 - **Inspect unfamiliar GGUFs.** Preflight checks model architecture and metadata before committing to a large download or unsupported runtime path.
-- **Expose the experiment.** FIELD STATION records model, device, loading, context, performance and first-failure diagnostics so unsuccessful runs are useful evidence rather than silent breakage.
+- **Expose the experiment.** Device, model, loading, context, performance and first-failure diagnostics are recorded so unsuccessful runs are useful evidence rather than silent breakage.
 
 ## Experimental model status
 
-The catalogue changes as experiments progress. At the moment it includes:
+The catalogue changes as experiments progress.
 
-| Model | FIELD STATION status | Purpose |
+| Model | Shared AI status | Purpose |
 |---|---|---|
 | Qwen3 0.6B / 1.7B / 4B | inherited / working paths | Small dense baselines and compatibility tests |
 | Qwen 3.8 27B | inherited SwarmLLM path | Large distributed-compute baseline |
@@ -62,29 +60,29 @@ The catalogue changes as experiments progress. At the moment it includes:
 | **Llama 3 70B Instruct Q4_0** | **collective experiment; field run pending** | ~40 GB model / ~41.5 GB room target across multiple devices |
 | SmolLM2 135M | inherited | Tiny runtime/demo target |
 
-“Experimental” matters. A model appearing in the picker does not mean we have completed deterministic reference testing across every supported device topology. In particular, **70B is now engineered for a first attempt, not claimed as proven working**. See the experiment notes and roadmap for current evidence rather than treating the table as a compatibility guarantee.
+“Experimental” matters. A model appearing in the picker does not mean deterministic reference testing has been completed across every supported topology. In particular, **70B is engineered for a first attempt, not claimed as proven working**.
 
 ### 70B requirements
 
-The first Llama 3 70B route uses the exact QuantFactory Q4_0 GGUF and deliberately stays on original Llama 3's already-understood dense/unscaled-RoPE architecture.
+The first Llama 3 70B route uses the QuantFactory Q4_0 GGUF and deliberately stays on original Llama 3's already-understood dense/unscaled-RoPE architecture.
 
-FIELD STATION currently asks for approximately **41.5 GB pledged across the room**. One participating desktop/laptop must also be capable of acting as host for the separate Llama output head; the catalogue gate requires at least **0.55 GB per WebGPU storage binding** on that host. The planner accounts for the K/V cache as well as model weights.
+Shared AI currently asks for approximately **41.5 GB pledged across the room**. One participating desktop/laptop must also be capable of acting as host for the separate Llama output head; the catalogue gate requires at least **0.55 GB per WebGPU storage binding** on that host. The planner accounts for the K/V cache as well as model weights.
 
-The host keeps the quantised token embedding CPU-side for row lookup and streams the separate output head to GPU, avoiding a duplicate GPU copy of the embedding. Very large model ranges are also excluded from the browser weight-cache clone path. The next unknown is empirical: whether ordinary browser processes can survive the 70B host embedding fetch/repack and collectively bring all 80 layers online.
+The host keeps the quantised token embedding CPU-side for row lookup and streams the separate output head to GPU, avoiding a duplicate GPU copy of the embedding. Very large model ranges are excluded from the browser weight-cache clone path.
 
-See [`docs/experiments/llama3-70b.md`](docs/experiments/llama3-70b.md) for the exact target, test topology, milestones and evidence to capture.
+See [`docs/experiments/llama3-70b.md`](docs/experiments/llama3-70b.md) for the exact target, topology, milestones and evidence to capture.
 
 ## Sources and privacy
 
-FIELD STATION is **local-first, not confidential**.
+Shared AI is **local-first, not confidential**.
 
-When you add a Source, the complete file is read and processed locally in that browser. It is not uploaded to a FIELD STATION server. For a question, the browser builds a compact source context — for example selected text passages or a dataset profile — and only that material is added to the model prompt.
+When you add a Source, the complete file is read and processed locally in that browser. It is not uploaded to a Shared AI or FIELD STATION server. For a question, the browser builds a compact source context — for example selected text passages or a dataset profile — and only that material is added to the model prompt.
 
-Once source material enters a prompt, participating devices help compute on it. Treat prompts, selected source excerpts and model activations as potentially visible to other room participants. **Do not use FIELD STATION for sensitive, confidential or personal data.** WebRTC encrypts traffic in transit; it does not make an untrusted participant a private compute environment. See [SECURITY.md](SECURITY.md).
+Once source material enters a prompt, participating devices help compute on it. Treat prompts, selected source excerpts and model activations as potentially visible to other room participants. **Do not use Shared AI for sensitive, confidential or personal data.** WebRTC encrypts traffic in transit; it does not make an untrusted participant a private compute environment. See [SECURITY.md](SECURITY.md).
 
 ## Quick start
 
-FIELD STATION is a static browser application with a build step that applies and verifies FIELD STATION's runtime patches.
+Shared AI is a static browser application with a build step that applies and verifies the experiment's runtime patches.
 
 ```bash
 git clone https://github.com/tomcwxyz/swarmllm---FIELD-STATION-.git
@@ -98,7 +96,7 @@ Then open `http://localhost:8080`, create a room and optionally invite more devi
 Useful commands:
 
 ```bash
-npm run build:field   # build the FIELD STATION distributable into dist/
+npm run build:field   # build the distributable into dist/
 npm run serve:field   # build and serve it locally
 npm test              # unit tests (requires Deno 2.x)
 npm run test:gpu      # upstream/engine GPU tests
@@ -106,8 +104,6 @@ npm run e2e           # browser room test
 ```
 
 ## How collective inference works
-
-At a high level:
 
 ```text
 host      token / embedding
@@ -121,56 +117,60 @@ peer C    next slice
 host      final norm → model head → next token
 ```
 
-The important unit sent between devices is the model's hidden activation, not the entire model state. Each device downloads and retains only the weights assigned to its layer slice. The host coordinates the generation loop, while WebRTC carries activations between peers.
+Each device downloads and retains only the weights assigned to its layer slice. The host coordinates the generation loop, while WebRTC carries hidden activations between peers.
 
-FIELD STATION currently builds on SwarmLLM's custom WebGPU/WGSL inference engine rather than wrapping WebLLM, llama.cpp or a remote inference API. FIELD STATION additions include model adapters and chat framing, Llama GGUF rotary-layout/scaling support, local Source processing, room UX, diagnostics, large-model memory planning and experiment-oriented guardrails.
+Shared AI currently builds on SwarmLLM's custom WebGPU/WGSL inference engine rather than wrapping WebLLM, llama.cpp or a remote inference API. Additions made for this experiment include model adapters and chat framing, Llama GGUF rotary-layout/scaling support, local Source processing, room UX, diagnostics, large-model memory planning and experiment-oriented guardrails.
+
+## FIELD STATION
+
+[FIELD STATION](https://fieldstation.xyz/) is the **action lab**, not the software in this repository. Shared AI is one FIELD STATION experiment.
+
+The lab investigates questions around the future of work, technology and society through practical experiments, research and action. This repository is one piece of that wider programme rather than the identity of FIELD STATION itself.
+
+## Relationship to SwarmLLM
+
+This repository would not exist without [SwarmLLM](https://github.com/Nehanth/swarmllm).
+
+In practical terms:
+
+- the **distributed WebGPU inference foundation** is derived from SwarmLLM;
+- Shared AI has substantially changed the **experiment, interface and runtime around that foundation**;
+- upstream SwarmLLM performance claims, demos and test results are not automatically claims about Shared AI;
+- inherited work retains its attribution and licence history.
+
+If work here is generally useful to distributed browser inference, upstreaming it back to SwarmLLM should be considered where practical.
 
 ## Repository layout
 
 ```text
-field-station/            FIELD STATION conversation, model-capability and Source logic
-field-station-*.js/css    FIELD STATION browser shell, diagnostics, model and Sources UI
-field-room.html           FIELD STATION room interface
+field-station/            experiment-specific conversation, model-capability and Source logic
+field-station-*.js/css    browser shell, diagnostics, model and Sources UI
+field-room.html           shared-compute room interface
 engine/                   WebGPU inference engine inherited from / evolved from SwarmLLM
 room/ + room.js           distributed room runtime, transport and model catalogue
-scripts/                  FIELD STATION build patches and build-time verification
-docs/                     architecture, security/technical notes and experiment records
+scripts/                  build patches and build-time verification
+docs/                     architecture, technical notes and experiment records
 roadmap/                  active research and engineering roadmap
 tests/                    unit, GPU, reference and end-to-end tests
 benchmarks/               engine benchmark harnesses
 ```
 
-A deliberate project convention is that several FIELD STATION changes are applied to the copied runtime during `npm run build:field`. Those patches have exact markers and the build fails when upstream/runtime structure drifts instead of silently producing a partially patched application.
-
-## Relationship to SwarmLLM
-
-This repository would not exist without [SwarmLLM](https://github.com/Nehanth/swarmllm). The project began by asking whether SwarmLLM's distributed browser inference could form the basis of a FIELD STATION experiment, and then diverged as the research questions widened.
-
-In practical terms:
-
-- the **distributed WebGPU inference foundation** is derived from SwarmLLM;
-- FIELD STATION has substantially changed the **tool, interface and experimental runtime around that foundation**;
-- upstream SwarmLLM performance claims, demos and test results are not automatically claims about FIELD STATION;
-- where we modify inherited code, we aim to preserve attribution and make the boundary visible rather than erase the history of the fork.
-
-If work here is generally useful to distributed browser inference, upstreaming it back to SwarmLLM should be considered where practical.
+Some internal filenames still use `field-station` because they grew out of the experiment's original implementation. They are implementation details rather than the public name of the tool.
 
 ## Current research directions
 
-The active work is less about polishing a conventional chat product and more about learning from the system:
-
 - deterministic Llama 3.x reference and multi-device equivalence testing;
 - the first reproducible **Llama 3 70B multi-device load and reference run**;
-- if 70B exposes it, streaming host-side embedding repack and eventually global-tensor sharding for lower-limit devices;
-- richer local analysis of attached datasets rather than simply placing rows in context;
+- streaming host-side embedding repack and, if needed, global-tensor sharding for lower-limit devices;
+- richer local analysis of attached datasets;
 - PDF and other local Source types;
-- clearer evidence about the practical trade-offs between device count, memory, network latency, energy and useful model size.
+- evidence about trade-offs between device count, memory, network latency, energy and useful model size.
 
-See [`roadmap/`](roadmap/) for the working plan and [`docs/experiments/`](docs/experiments/) for field protocols and results.
+See [`roadmap/`](roadmap/) and [`docs/experiments/`](docs/experiments/).
 
 ## Contributing
 
-FIELD STATION benefits particularly from **real hardware evidence**: different browsers, GPUs, phones, networks and model files expose assumptions quickly. Reproducible failures are useful results.
+Shared AI benefits particularly from **real hardware evidence**: different browsers, GPUs, phones, networks and model files expose assumptions quickly. Reproducible failures are useful results.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [GOVERNANCE.md](GOVERNANCE.md).
 
@@ -188,7 +188,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [GOVERNANCE.md](GOVERNANCE.md).
 }
 ```
 
-FIELD STATION also depends on work from the open model and inference ecosystem, including [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp), [Qwen](https://huggingface.co/Qwen), Meta's Llama models, Hugging Face model hosting, and PeerJS. Prior work referenced by the inherited SwarmLLM engine includes Petals, exo, WebLLM, LlamaWeb, Gated DeltaNet and PipeInfer.
+Shared AI also depends on work from the open model and inference ecosystem, including [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp), [Qwen](https://huggingface.co/Qwen), Meta's Llama models, Hugging Face model hosting and PeerJS.
 
 ## License
 
