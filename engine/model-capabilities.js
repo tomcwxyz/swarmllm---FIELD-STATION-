@@ -1,14 +1,12 @@
 // Model capability registry and GGUF preflight inspection.
-//
-// This intentionally describes what FIELD STATION can execute separately from
-// what a GGUF file happens to contain. It is the first boundary for future
-// Hugging Face "inspect before download" model selection.
 
 import {
   GGML_F32, GGML_F16, GGML_Q8_0, GGML_Q4_0, GGML_Q4_1, GGML_Q5_K, GGML_Q6_K,
   ggmlTypeBytes,
 } from "./gguf.js";
 import { GGML_Q4_K, q4KTypeBytes } from "./q4k.js";
+
+const GGML_ROPE_FREQS = "rope_freqs.weight";
 
 export const QUANT_CAPABILITIES = Object.freeze({
   [GGML_F32]: { name: "F32", status: "supported", path: "float" },
@@ -24,7 +22,7 @@ export const QUANT_CAPABILITIES = Object.freeze({
 export const ARCHITECTURE_CAPABILITIES = Object.freeze({
   qwen3: { adapter: "dense", status: "supported" },
   qwen35: { adapter: "qwen35", status: "supported" },
-  llama: { adapter: "llama", status: "planned" },
+  llama: { adapter: "llama", status: "supported" },
   gemma: { adapter: "gemma", status: "planned" },
   gemma2: { adapter: "gemma", status: "planned" },
   gemma3: { adapter: "gemma", status: "planned" },
@@ -45,8 +43,20 @@ export function tensorTypeBytes(type, nElems) {
 
 function architectureFromMeta(meta = {}) {
   const raw = String(meta["general.architecture"] || "unknown").trim().toLowerCase();
-  // GGUF producers are not perfectly consistent about separators.
   return raw.replaceAll("-", "").replaceAll("_", "");
+}
+
+function unsupportedArchitectureFeature(meta, tensors, architecture) {
+  if (architecture !== "llama") return null;
+  const raw = meta["llama.rope.scaling.type"];
+  if (raw === undefined || raw === null) return null;
+  const type = String(raw).trim().toLowerCase();
+  if (!type || type === "none") return null;
+  if (type === "llama3") {
+    if (tensors?.[GGML_ROPE_FREQS]) return null;
+    return "Llama3 scaled RoPE needs rope_freqs.weight in the GGUF";
+  }
+  return `Llama RoPE scaling ${type} is not implemented`;
 }
 
 function layerCount(meta, architecture, tensors) {
@@ -65,26 +75,20 @@ function layerCount(meta, architecture, tensors) {
 function runtimeTensorBytes(tensor) {
   const n = Number(tensor?.nElems) || 0;
   if (!n) return 0;
-  // 1D norms/biases are materialised as f32. For matrices, FIELD STATION either keeps
-  // the native GPU representation or converts unsupported quant formats to Q8.
   if (!Array.isArray(tensor.shape) || tensor.shape.length !== 2) return n * 4;
-  if (tensor.ggmlType === GGML_Q4_0) return n / 2 + (n / 32) * 2; // nibbles + f16 scale/block
-  if (tensor.ggmlType === GGML_Q8_0) return n + (n / 32) * 2;     // int8 + f16 scale/block
+  if (tensor.ggmlType === GGML_Q4_0) return n / 2 + (n / 32) * 2;
+  if (tensor.ggmlType === GGML_Q8_0) return n + (n / 32) * 2;
   if (tensor.ggmlType === GGML_F32 || tensor.ggmlType === GGML_F16) return n * 4;
-  if (QUANT_CAPABILITIES[tensor.ggmlType]?.status === "supported-with-conversion")
-    return n + (n / 32) * 2; // current conversion target is Q8
+  if (QUANT_CAPABILITIES[tensor.ggmlType]?.status === "supported-with-conversion") return n + (n / 32) * 2;
   return n * 4;
 }
 
-/**
- * Inspect a parsed GGUF header without fetching tensor bodies.
- * Returns an explicit architecture/quantisation verdict suitable for UI.
- */
 export function inspectGGUFCompatibility(G) {
   const meta = G?.meta || {};
   const tensors = G?.tensors || {};
   const architecture = architectureFromMeta(meta);
   const arch = ARCHITECTURE_CAPABILITIES[architecture] || { adapter: null, status: "unsupported" };
+  const architectureFeature = unsupportedArchitectureFeature(meta, tensors, architecture);
   const counts = new Map();
   let totalBytes = 0;
   let estimatedRuntimeBytes = 0;
@@ -105,33 +109,30 @@ export function inspectGGUFCompatibility(G) {
   }
 
   let status = "unsupported";
-  if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size === 0) {
+  if (architectureFeature) status = "architecture-needed";
+  else if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size === 0)
     status = conversionTypes.size ? "supported-with-conversion" : "supported";
-  } else if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size > 0) {
-    status = "integration-needed";
-  } else if (arch.status === "planned" || arch.status === "research") {
-    status = "architecture-needed";
-  }
+  else if (arch.status === "supported" && unsupportedTypes.size === 0 && codecReadyTypes.size > 0) status = "integration-needed";
+  else if (arch.status === "planned" || arch.status === "research") status = "architecture-needed";
 
-  const tensorTypes = [...counts.entries()]
-    .map(([type, count]) => ({
-      type,
-      name: ggmlTypeName(type),
-      count,
-      status: QUANT_CAPABILITIES[type]?.status || "unsupported",
-      path: QUANT_CAPABILITIES[type]?.path || null,
-    }))
-    .sort((a, b) => a.type - b.type);
+  const tensorTypes = [...counts.entries()].map(([type, count]) => ({
+    type, name: ggmlTypeName(type), count,
+    status: QUANT_CAPABILITIES[type]?.status || "unsupported",
+    path: QUANT_CAPABILITIES[type]?.path || null,
+  })).sort((a, b) => a.type - b.type);
 
   const reasons = [];
   if (arch.status !== "supported") reasons.push(`architecture ${architecture} is ${arch.status}`);
+  if (architectureFeature) reasons.push(architectureFeature);
   if (unsupportedTypes.size) reasons.push(`unsupported tensor types: ${[...unsupportedTypes].map(ggmlTypeName).join(", ")}`);
   if (codecReadyTypes.size) reasons.push(`codec ready, loader integration pending: ${[...codecReadyTypes].map(ggmlTypeName).join(", ")}`);
   if (conversionTypes.size) reasons.push(`converted to Q8 at load: ${[...conversionTypes].map(ggmlTypeName).join(", ")}`);
+  if (architecture === "llama" && String(meta["llama.rope.scaling.type"] || "").toLowerCase() === "llama3" && tensors[GGML_ROPE_FREQS])
+    reasons.push("scaled RoPE uses GGUF rope_freqs.weight");
 
   return {
     architecture,
-    architectureStatus: arch.status,
+    architectureStatus: architectureFeature ? "feature-pending" : arch.status,
     adapter: arch.adapter,
     status,
     layerCount: layerCount(meta, architecture, tensors),

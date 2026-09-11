@@ -26,6 +26,23 @@ export async function patchFieldModelRuntime(roomPath) {
     "model catalogue import",
   );
 
+  source = replaceOnce(
+    source,
+    "        meta.maxBufGB = +(a.limits.maxBufferSize / 2 ** 30).toFixed(1);",
+    "        meta.maxBufGB = +(a.limits.maxBufferSize / 2 ** 30).toFixed(1);\n        meta.maxBindGB = +(a.limits.maxStorageBufferBindingSize / 2 ** 30).toFixed(2);",
+    "GPU storage binding capability",
+  );
+
+  // Avoid making a second in-memory copy of very large global tensors while the
+  // caller is already consuming them. Layer tensors remain cacheable; 70B's
+  // ~560 MiB embedding/output tensors do not.
+  source = replaceOnce(
+    source,
+    "  if (c && !myMeta?.phone) {   // phones skip the store (no spare RAM for the copy); Cache API refuses 206s, so store as a plain 200",
+    "  if (c && !myMeta?.phone && hi - lo + 1 <= 192 * 2 ** 20) {   // cache layer-sized ranges, but never clone giant embedding/head tensors",
+    "large range cache guard",
+  );
+
   const externalConfigMarker = `  if (M.cfg) {\n    ai.cfg = await (await fetch(M.cfg)).json();\n    if (hasEmbed || hasHead) ai.tok = makeTokenizer(await (await fetch(M.tok)).json());\n  }`;
   source = replaceOnce(
     source,
@@ -42,6 +59,14 @@ export async function patchFieldModelRuntime(roomPath) {
     ggufLoadMarker,
     `    const needTok = hasEmbed || hasHead;\n    const cachedOk = ai.G && ai.GModel === modelKey && (!needTok || ai.G.meta["tokenizer.ggml.tokens"]);\n    const G = cachedOk ? ai.G : await fetchGGUFHeader(M.gguf, needTok);\n    ai.G = G; ai.GModel = modelKey;\n    ai.cfg = denseConfigFromGGUF(G);\n    if (needTok) {\n      ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));\n      ai.chat = chatRuntimeFromGGUF(G, ai.tok);\n    }\n    const opts = { lo: range[0], hi: range[1], hasEmbed, hasHead };`,
     "dense GGUF shard loader",
+  );
+
+  const denseUploadMarker = `    const weights = await ggufWeights(G, rangeBytesOf(M.gguf), opts, (done) => onProg(done, total),\n      (e, name) => gpuUploadEntry(ai.device, e, name === GGML_EMBED));`;
+  source = replaceOnce(
+    source,
+    denseUploadMarker,
+    `    const weights = await ggufWeights(G, rangeBytesOf(M.gguf), opts, (done) => onProg(done, total),\n      // Quantised embeddings are looked up on CPU. When an untied output.weight\n      // exists (Llama 3), uploading token_embd.weight as well only duplicates a\n      // huge buffer on the host; the DenseEngine will use output.weight for logits.\n      (e, name) => name === GGML_EMBED && G.tensors[GGML_OUTPUT]\n        ? null\n        : gpuUploadEntry(ai.device, e, name === GGML_EMBED));`,
+    "untied dense embedding upload",
   );
 
   const hybridTokenizerMarker = `    if (hasEmbed || hasHead) ai.tok = makeTokenizer(tokenizerFromGGUF(G.meta));`;
@@ -66,6 +91,22 @@ export async function patchFieldModelRuntime(roomPath) {
     duplicateHeaderMarker,
     `      if (!ai.G || ai.GModel !== modelKey) ai.G = await fetchGGUFHeader(M.gguf, false);\n      ai.GModel = modelKey;\n      layerBytes = Object.values(ggmlLayerNames(0))`,
     "duplicate dense GGUF header fetch",
+  );
+
+  const densePlannerMarker = `      embedBytes = (ai.G.tensors[GGML_EMBED]?.byteLength || 0) + (ai.G.tensors[GGML_OUTPUT]?.byteLength || 0);`;
+  source = replaceOnce(
+    source,
+    densePlannerMarker,
+    `      embedBytes = (ai.G.tensors[GGML_EMBED]?.byteLength || 0) + (ai.G.tensors[GGML_OUTPUT]?.byteLength || 0);\n      // Every dense layer also owns K/V caches. At 70B this is ~16 MiB per\n      // layer for the current 2,048-token room context, so ignoring it would\n      // over-deal layers and make an apparently sufficient 40 GB room fail late.\n      const headDim = cfg.head_dim || cfg.hidden_size / cfg.num_attention_heads;\n      const kvDim = cfg.num_key_value_heads * headDim;\n      layerBytes += 2 * MAX_SEQ * kvDim * 4;`,
+    "dense KV-cache planner cost",
+  );
+
+  const bossMarker = `function biggestPeerId() {\n  const gb = (m) => m?.contribGB ?? 0;\n  let best = peer.id, bestGB = gb(myMeta);\n  for (const [id, e] of conns) if (gb(e.meta) > bestGB || (gb(e.meta) === bestGB && id < best)) { best = id; bestGB = gb(e.meta); }\n  return best;\n}\nfunction aiStartAnywhere() {\n  const model = $("ai-model").value;\n  const boss = biggestPeerId();`;
+  source = replaceOnce(
+    source,
+    bossMarker,
+    `function biggestPeerId(modelKey) {\n  const gb = (m) => m?.contribGB ?? 0;\n  const minBind = MODELS[modelKey]?.hostMinBindGB || 0;\n  const eligible = (m) => (m?.maxBindGB ?? m?.maxBufGB ?? 0) >= minBind;\n  let best = eligible(myMeta) ? peer.id : null, bestGB = best ? gb(myMeta) : -1;\n  for (const [id, e] of conns) {\n    if (!eligible(e.meta)) continue;\n    if (gb(e.meta) > bestGB || (gb(e.meta) === bestGB && (best === null || id < best))) { best = id; bestGB = gb(e.meta); }\n  }\n  return best;\n}\nfunction aiStartAnywhere() {\n  const model = $("ai-model").value;\n  const boss = biggestPeerId(model);\n  if (!boss) {\n    const need = MODELS[model]?.hostMinBindGB || 0;\n    const msg = "This model needs a host with at least " + need.toFixed(2) + " GB per WebGPU storage binding. Add or use a stronger host device.";\n    aiStatus("cannot start: " + msg); toast(msg); return;\n  }`,
+    "70B-capable host selection",
   );
 
   const startRequestMarker = `  broadcastAll({ t: "ai-start-req", model, boss, by: myName });`;

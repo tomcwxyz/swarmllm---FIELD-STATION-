@@ -27,21 +27,25 @@ function normaliseModelURL(raw) {
   return url.toString();
 }
 
+function isRunnableReport(report) {
+  return ["qwen3", "llama"].includes(report?.architecture)
+    && (report.status === "supported" || report.status === "supported-with-conversion");
+}
+
 async function fetchGGUFHeaderForInspection(url) {
   let size = 12 * MIB;
   for (;;) {
     const response = await fetch(url, { headers: { Range: `bytes=0-${size - 1}` } });
     if (response.status !== 206) {
+      const host = new URL(url).host;
       throw new Error(response.ok
-        ? "The model host did not honour HTTP range requests. FIELD STATION needs range access so devices can fetch only their assigned layers."
-        : `Model host returned HTTP ${response.status}.`);
+        ? `The model host ${host} did not honour HTTP range requests (HTTP ${response.status}). FIELD STATION needs range access so devices fetch only assigned layers.`
+        : `Model host ${host} returned HTTP ${response.status}.`);
     }
     const buf = await response.arrayBuffer();
     try {
       return { G: parseGGUFHeader(buf, { skipTokenizer: true }), headerBytesFetched: buf.byteLength };
     } catch (error) {
-      // A truncated GGUF header commonly surfaces as a DataView bounds error. Double the
-      // prefix until the tensor index is complete; never proceed into the weight body blindly.
       if (size >= 256 * MIB) throw new Error(`Could not read the GGUF header: ${error?.message || error}`);
       size *= 2;
     }
@@ -49,7 +53,16 @@ async function fetchGGUFHeaderForInspection(url) {
 }
 
 function statusCopy(report) {
-  if (report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion")) {
+  if (isRunnableReport(report)) {
+    if (report.architecture === "llama") {
+      const scaled = report.reasons.some((reason) => reason.includes("scaled RoPE"));
+      if (scaled) return report.status === "supported"
+        ? "COMPATIBLE / Llama 3.x dense adapter + GGUF scaled RoPE"
+        : "COMPATIBLE / Llama 3.x + scaled RoPE + quant conversion";
+      return report.status === "supported"
+        ? "COMPATIBLE / Llama 3 dense adapter"
+        : "COMPATIBLE / Llama dense adapter + conversion path";
+    }
     return report.status === "supported"
       ? "COMPATIBLE / current Qwen3 dense adapter"
       : "COMPATIBLE / conversion path required";
@@ -63,9 +76,8 @@ function renderReport(result) {
   const reportEl = $("model-report");
   if (!reportEl) return;
   const { report, headerBytesFetched } = result;
-  const useable = report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion");
+  const useable = isRunnableReport(report);
   reportEl.dataset.tone = useable ? "ok" : report.status === "architecture-needed" || report.status === "integration-needed" ? "warn" : "bad";
-
   const types = report.tensorTypes.map((t) => `${t.name} × ${t.count}${t.status === "supported-with-conversion" ? " → Q8" : ""}`).join(" · ");
   const reasons = report.reasons.length ? `<div>${report.reasons.map(escapeHTML).join(" · ")}</div>` : "";
   reportEl.innerHTML = `
@@ -75,12 +87,8 @@ function renderReport(result) {
     <div>GGUF tensors ${escapeHTML(fmtBytes(report.totalTensorBytes))} · estimated runtime weights ${escapeHTML(fmtBytes(report.estimatedRuntimeBytes))}</div>
     <div>inspection read ${escapeHTML(fmtBytes(headerBytesFetched))} of header/index only</div>
     ${reasons}`;
-
   const use = $("model-use");
-  if (use) {
-    use.hidden = !useable;
-    use.disabled = !useable;
-  }
+  if (use) { use.hidden = !useable; use.disabled = !useable; }
 }
 
 function escapeHTML(value) {
@@ -107,59 +115,33 @@ async function inspectModel() {
     if ($("model-report")) $("model-report").innerHTML = '<div class="model-verdict">READING GGUF HEADER…</div><div>No model weights are being loaded yet.</div>';
     const { G, headerBytesFetched } = await fetchGGUFHeaderForInspection(url);
     const report = inspectGGUFCompatibility(G);
-    // Run the actual adapter config validation too. A header can have the right architecture
-    // label while still omitting dimensions the current DenseEngine needs.
-    if (report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion")) {
+    if (isRunnableReport(report)) {
       try { denseConfigFromGGUF(G); }
-      catch (error) {
-        report.status = "unsupported";
-        report.reasons.push(error.message);
-      }
+      catch (error) { report.status = "unsupported"; report.reasons.push(error.message); }
     }
     inspected = { url, G, report, headerBytesFetched };
     renderReport(inspected);
     window.fieldStationDiagnostics?.record("model:preflight", {
-      architecture: report.architecture,
-      status: report.status,
-      tensorCount: report.tensorCount,
-      layerCount: report.layerCount,
-      tensorTypes: report.tensorTypes.map((t) => t.name),
-      headerBytesFetched,
+      architecture: report.architecture, status: report.status, tensorCount: report.tensorCount,
+      layerCount: report.layerCount, tensorTypes: report.tensorTypes.map((t) => t.name), headerBytesFetched,
     });
   } catch (error) {
     showFailure(error);
     window.fieldStationDiagnostics?.record("model:preflight-error", { error: String(error?.message || error) });
-  } finally {
-    button.disabled = false;
-  }
+  } finally { button.disabled = false; }
 }
 
 function useInspectedModel() {
   if (!inspected) return;
   const { url, G, report } = inspected;
-  const useable = report.architecture === "qwen3" && (report.status === "supported" || report.status === "supported-with-conversion");
-  if (!useable) return;
-
+  if (!isRunnableReport(report)) return;
   const key = "field-custom-gguf";
   const name = G.meta["general.name"] || filenameFromURL(url);
-  MODELS[key] = {
-    label: `${name} · custom GGUF`,
-    kind: "gguf",
-    gguf: url,
-    fieldCustom: true,
-  };
-  // Conversion-heavy GGUFs can occupy materially more GPU memory than their file size.
-  // Add 30% allocator/KV/headroom plus a small fixed cushion; the real shard planner then
-  // recalculates exact layer bytes from the header before loading.
+  MODELS[key] = { label: `${name} · custom GGUF`, kind: "gguf", gguf: url, fieldCustom: true };
   NEED_GB[key] = Math.max(0.6, Math.ceil(((report.estimatedRuntimeBytes * 1.3) / GIB + 0.15) * 10) / 10);
-
   const select = $("ai-model");
   let option = [...select.options].find((o) => o.value === key);
-  if (!option) {
-    option = document.createElement("option");
-    option.value = key;
-    select.appendChild(option);
-  }
+  if (!option) { option = document.createElement("option"); option.value = key; select.appendChild(option); }
   option.textContent = `${name} · inspected custom GGUF`;
   select.value = key;
   select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -174,26 +156,20 @@ function addMissingCatalogueOptions() {
   const existing = new Set([...select.options].map((o) => o.value));
   for (const [key, model] of Object.entries(MODELS)) {
     if (existing.has(key)) continue;
-    const option = document.createElement("option");
-    option.value = key;
-    option.textContent = model.label;
-    select.appendChild(option);
+    const option = document.createElement("option"); option.value = key; option.textContent = model.label; select.appendChild(option);
   }
 }
 
 function installModelPreflight() {
   addMissingCatalogueOptions();
   $("model-preflight-toggle")?.addEventListener("click", () => {
-    const panel = $("model-preflight");
-    panel.hidden = !panel.hidden;
+    const panel = $("model-preflight"); panel.hidden = !panel.hidden;
     $("model-preflight-toggle").textContent = panel.hidden ? "Inspect another GGUF…" : "Close model inspection";
     if (!panel.hidden) $("model-url")?.focus();
   });
   $("model-inspect")?.addEventListener("click", inspectModel);
   $("model-use")?.addEventListener("click", useInspectedModel);
-  $("model-url")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") { event.preventDefault(); inspectModel(); }
-  });
+  $("model-url")?.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); inspectModel(); } });
 }
 
 installModelPreflight();
