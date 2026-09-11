@@ -81,7 +81,8 @@ export async function verifyFieldBuild(dist) {
   const model = catalogue.MODELS["llama3-8b-q4"];
   assert.ok(model, "Llama 3 experiment model must be in the built catalogue");
   assert.equal(model.kind, "gguf");
-  assert.match(model.gguf, /Meta-Llama-3-8B-Instruct-Q4_0\.gguf$/);
+  assert.match(model.gguf, /^https:\/\/huggingface\.co\/QuantFactory\/Meta-Llama-3-8B-Instruct-GGUF\/resolve\/main\/Meta-Llama-3-8B-Instruct\.Q4_0\.gguf$/,
+    "Llama experiment must use the reviewed QuantFactory Q4_0 source");
 
   const denseSource = await readFile(join(dist, "engine", "dense.js"), "utf8");
   const wgslSource = await readFile(join(dist, "engine", "wgsl", "base.js"), "utf8");
@@ -94,5 +95,5 @@ export async function verifyFieldBuild(dist) {
   assert.match(wgslSource, /select\(i \+ half, 2u \* i \+ 1u, cfg\.ropeInterleaved != 0u\)/,
     "built RoPE kernel must retain half-split Qwen pairs when the flag is off");
 
-  console.log("FIELD STATION build verification passed: Llama 3 adapter, chat framing, guardrails and interleaved RoPE are present.");
+  console.log("FIELD STATION build verification passed: Llama 3 adapter, QuantFactory source, chat framing, guardrails and interleaved RoPE are present.");
 }
