@@ -4,6 +4,7 @@ export const NEED_GB = {
   "qwen3-0.6b-q4": 0.6, "qwen3-0.6b-q4k": 0.9, "qwen3-0.6b": 0.8,
   "qwen3-1.7b": 2.0, "qwen3-4b": 4.6,
   "llama32-1b-q4": 1.1, "llama32-3b-q4": 2.5, "llama3-8b-q4": 5.2,
+  "llama3-70b-q4": 41.5,
   "qwen3.8-27b": 16.5, "smollm-135m": 0.6,
 };
 
@@ -38,6 +39,12 @@ export const MODELS = {
     gguf: "https://huggingface.co/QuantFactory/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct.Q4_0.gguf" },
   "llama3-8b-q4": { label: "Llama 3 8B · Q4 · experimental", kind: "gguf",
     gguf: "https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct.Q4_0.gguf" },
+  // Original Llama 3 70B deliberately stays on native Q4_0: the dense architecture
+  // and unscaled RoPE are already understood, so this isolates the collective-compute
+  // question. Its untied output head needs a ~501 MiB storage binding on the host.
+  "llama3-70b-q4": { label: "Llama 3 70B · Q4 · collective experiment", kind: "gguf",
+    gguf: "https://huggingface.co/QuantFactory/Meta-Llama-3-70B-Instruct-GGUF/resolve/main/Meta-Llama-3-70B-Instruct.Q4_0.gguf",
+    hostMinBindGB: 0.55 },
 
   "qwen3.8-27b": { label: "Qwen 3.8 27B · Q4", kind: "qwen35",
     gguf: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q4_0.gguf" },
