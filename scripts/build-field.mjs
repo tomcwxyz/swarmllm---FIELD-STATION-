@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { patchFieldRuntime } from "./patch-field-runtime.mjs";
+import { patchFieldGpuGuard } from "./patch-field-gpu-guard.mjs";
 import { patchFieldModels } from "./patch-field-models.mjs";
 import { patchFieldModelRuntime } from "./patch-field-model-runtime.mjs";
 import { patchFieldLlamaRuntime } from "./patch-field-llama.mjs";
@@ -29,6 +30,7 @@ for (const path of [
 ]) await copy(path);
 
 await patchFieldRuntime(join(dist, "room.js"));
+await patchFieldGpuGuard(join(dist, "room.js"));
 await patchFieldModelRuntime(join(dist, "room.js"));
 await patchFieldModels(join(dist, "engine", "gguf.js"));
 await patchFieldLlamaRuntime(join(dist, "engine", "dense.js"), join(dist, "engine", "wgsl", "base.js"));
