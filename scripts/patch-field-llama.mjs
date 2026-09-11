@@ -44,7 +44,13 @@ export async function patchFieldLlamaRuntime(densePath, wgslPath) {
     dense,
     "    this.bgRopeQ = this._bg(this.pipes.rope, 1, [this.q, this.nHBuf]);\n    this.bgRopeK = this._bg(this.pipes.rope, 1, [this.k, this.nKVBuf]);",
     "    this.bgRopeQ = this._bg(this.pipes.rope, 1, [this.q, this.nHBuf, this.ropeFreqBuf]);\n    this.bgRopeK = this._bg(this.pipes.rope, 1, [this.k, this.nKVBuf, this.ropeFreqBuf]);",
-    "RoPE bind groups",
+    "single-token RoPE bind groups",
+  );
+  dense = replaceOnce(
+    dense,
+    "          ropeQ: this._bg2res(this.pipes.rope, [slice(B.q, c), { buffer: this.nHBuf }]),\n          ropeK: this._bg2res(this.pipes.rope, [slice(B.k, c), { buffer: this.nKVBuf }]),",
+    "          ropeQ: this._bg2res(this.pipes.rope, [slice(B.q, c), { buffer: this.nHBuf }, { buffer: this.ropeFreqBuf }]),\n          ropeK: this._bg2res(this.pipes.rope, [slice(B.k, c), { buffer: this.nKVBuf }, { buffer: this.ropeFreqBuf }]),",
+    "batched-prefill RoPE bind groups",
   );
   await writeFile(densePath, dense);
 
