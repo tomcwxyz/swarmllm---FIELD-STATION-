@@ -59,6 +59,34 @@ export async function verifyFieldBuild(dist) {
   assert.equal(cfg.rope_interleaved, true, "Llama GGUF must select interleaved rotary pairs");
   assert.equal(cfg.rope_scaling_type, null);
 
+  const llama70Header = llamaHeader({
+    "general.name": "Meta-Llama-3-70B-Instruct",
+    "llama.embedding_length": 8192,
+    "llama.block_count": 80,
+    "llama.feed_forward_length": 28672,
+    "llama.attention.head_count": 64,
+    "llama.attention.head_count_kv": 8,
+  }, {
+    "token_embd.weight": { shape: [128256, 8192] },
+    "blk.0.attn_q.weight": { shape: [8192, 8192] },
+    "blk.0.attn_k.weight": { shape: [1024, 8192] },
+    "blk.0.ffn_up.weight": { shape: [28672, 8192] },
+    "blk.0.ffn_gate.weight": { shape: [28672, 8192] },
+    "output.weight": { shape: [128256, 8192] },
+  });
+  const cfg70 = adapters.denseConfigFromGGUF(llama70Header);
+  assert.equal(cfg70.model_type, "llama");
+  assert.equal(cfg70.hidden_size, 8192);
+  assert.equal(cfg70.num_hidden_layers, 80);
+  assert.equal(cfg70.intermediate_size, 28672);
+  assert.equal(cfg70.num_attention_heads, 64);
+  assert.equal(cfg70.num_key_value_heads, 8);
+  assert.equal(cfg70.head_dim, 128);
+  assert.equal(cfg70.rope_theta, 500_000);
+  assert.equal(cfg70.rope_interleaved, true);
+  assert.equal(cfg70.rope_scaling_type, null,
+    "original Llama 3 70B must stay on the proven unscaled-RoPE path");
+
   const scaled = llamaHeader(
     { "llama.context_length": 131072, "llama.rope.scaling.type": "llama3", "llama.rope.scaling.factor": 32 },
     { "rope_freqs.weight": { shape: [64], ggmlType: 0, nElems: 64, byteLength: 256 } },
@@ -136,9 +164,15 @@ export async function verifyFieldBuild(dist) {
   const llama1 = catalogue.MODELS["llama32-1b-q4"];
   const llama3 = catalogue.MODELS["llama32-3b-q4"];
   const llama8 = catalogue.MODELS["llama3-8b-q4"];
+  const llama70 = catalogue.MODELS["llama3-70b-q4"];
   assert.match(llama1?.gguf || "", /^https:\/\/huggingface\.co\/QuantFactory\/Llama-3\.2-1B-Instruct-GGUF\/resolve\/main\/Llama-3\.2-1B-Instruct\.Q4_0\.gguf$/);
   assert.match(llama3?.gguf || "", /^https:\/\/huggingface\.co\/QuantFactory\/Llama-3\.2-3B-Instruct-GGUF\/resolve\/main\/Llama-3\.2-3B-Instruct\.Q4_0\.gguf$/);
   assert.match(llama8?.gguf || "", /^https:\/\/huggingface\.co\/QuantFactory\/Meta-Llama-3-8B-Instruct-GGUF\/resolve\/main\/Meta-Llama-3-8B-Instruct\.Q4_0\.gguf$/);
+  assert.match(llama70?.gguf || "", /^https:\/\/huggingface\.co\/QuantFactory\/Meta-Llama-3-70B-Instruct-GGUF\/resolve\/main\/Meta-Llama-3-70B-Instruct\.Q4_0\.gguf$/);
+  assert.ok((catalogue.NEED_GB["llama3-70b-q4"] || 0) >= 41,
+    "70B room requirement must include weight and KV-cache headroom");
+  assert.ok((llama70?.hostMinBindGB || 0) >= 0.5,
+    "70B must select a host capable of binding its large output head");
 
   const denseSource = await readFile(join(dist, "engine", "dense.js"), "utf8");
   const wgslSource = await readFile(join(dist, "engine", "wgsl", "base.js"), "utf8");
@@ -152,6 +186,8 @@ export async function verifyFieldBuild(dist) {
     "DenseEngine must keep tiny RoPE factors in a portable uniform buffer");
   assert.match(denseSource, /new Float32Array\(64\)\.fill\(1\)/,
     "RoPE factor uniform must be fixed-size and identity padded");
+  assert.match(denseSource, /if \(hasHead && !W\.head\) this\.headEntry = up\(W\.embed\)/,
+    "untied 70B must not upload a duplicate GPU copy of token embeddings");
   const ropeBindLines = denseSource.split("\n").filter((line) =>
     line.includes("this.pipes.rope") && (line.includes("this._bg(") || line.includes("this._bg2res(")));
   assert.equal(ropeBindLines.length, 4,
@@ -181,6 +217,16 @@ export async function verifyFieldBuild(dist) {
     "generation must stop after a GPU validation failure rather than sample garbage");
   assert.match(roomSource, /maxStorageBindingMB/,
     "GPU diagnostics must record relevant adapter limits");
+  assert.match(roomSource, /meta\.maxBindGB = .*maxStorageBufferBindingSize/,
+    "room roster must advertise storage-binding capacity for large-head host selection");
+  assert.match(roomSource, /hi - lo \+ 1 <= 192 \* 2 \*\* 20/,
+    "giant 70B embedding\/head ranges must not be cloned into the browser weight cache");
+  assert.match(roomSource, /name === GGML_EMBED && G\.tensors\[GGML_OUTPUT\]/,
+    "untied Llama embeddings must remain CPU-side instead of being duplicated on GPU");
+  assert.match(roomSource, /layerBytes \+= 2 \* MAX_SEQ \* kvDim \* 4/,
+    "dense room planner must budget distributed KV-cache memory per layer");
+  assert.match(roomSource, /hostMinBindGB/,
+    "70B host selection must enforce the output-head storage-binding requirement");
 
   assert.match(sourceUi, /profileCSV/,
     "CSV uploads must be profiled locally instead of treated as prose");
@@ -193,5 +239,5 @@ export async function verifyFieldBuild(dist) {
   await access(join(dist, "field-station-sources.js"));
   await access(join(dist, "field-station-sources.css"));
 
-  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, all RoPE bind paths, portable scaled-RoPE uniforms, GPU fail-fast guard, dataset-aware CSV Sources, QuantFactory sources and local document Sources are present.");
+  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, 70B collective planning, all RoPE bind paths, portable scaled-RoPE uniforms, GPU fail-fast guard, dataset-aware CSV Sources and local document Sources are present.");
 }
