@@ -51,7 +51,6 @@ export async function verifyFieldBuild(dist) {
   const sources = await import(pathToFileURL(join(dist, "field-station", "sources.js")).href + suffix);
   const catalogue = await import(pathToFileURL(join(dist, "room", "models.js")).href + suffix);
 
-  // Original Llama 3 remains unchanged: interleaved rotary pairs, no scaling.
   const cfg = adapters.denseConfigFromGGUF(llamaHeader());
   assert.equal(cfg.model_type, "llama");
   assert.equal(cfg.hidden_size, 4096);
@@ -60,8 +59,6 @@ export async function verifyFieldBuild(dist) {
   assert.equal(cfg.rope_interleaved, true, "Llama GGUF must select interleaved rotary pairs");
   assert.equal(cfg.rope_scaling_type, null);
 
-  // Llama 3.1/3.2 may declare llama3 scaling only when the GGUF carries the
-  // exact llama.cpp-generated frequency factor tensor.
   const scaled = llamaHeader(
     { "llama.context_length": 131072, "llama.rope.scaling.type": "llama3", "llama.rope.scaling.factor": 32 },
     { "rope_freqs.weight": { shape: [64], ggmlType: 0, nElems: 64, byteLength: 256 } },
@@ -95,7 +92,6 @@ export async function verifyFieldBuild(dist) {
   assert.equal(prompt.ids.filter((id) => id === 128000).length, 1, "Llama BOS must appear once even with Sources");
   assert.ok(prompt.sourceTokens > 0, "source excerpts must be represented in the current prompt");
 
-  // Sources retrieval is local and bounded before room.js ever sees the excerpt bundle.
   const chunks = sources.chunkSource({ name: "brief.md", text: "The office opens in June.\n\nThe lighthouse opens in May.\n\nThe garden opens in July." }, { chunkChars: 42, overlapChars: 0 });
   const retrieved = sources.buildSourceContext(chunks, "When does the lighthouse open?", { maxChars: 180, maxChunks: 2 });
   assert.match(retrieved.text, /lighthouse opens in May/i);
@@ -116,12 +112,16 @@ export async function verifyFieldBuild(dist) {
   const htmlSource = await readFile(join(dist, "field-room.html"), "utf8");
 
   assert.match(denseSource, /cu\[11\] = cfg\.rope_interleaved \? 1 : 0/);
-  assert.match(denseSource, /ropeFreqBuf/,
-    "DenseEngine must upload exact or identity RoPE factors");
+  assert.match(denseSource, /this\.ropeFreqBuf = this\._buf\(ropeFactors, GPUBufferUsage\.UNIFORM\)/,
+    "DenseEngine must keep tiny RoPE factors in a portable uniform buffer");
+  assert.match(denseSource, /new Float32Array\(64\)\.fill\(1\)/,
+    "RoPE factor uniform must be fixed-size and identity padded");
   assert.match(denseSource, /\[this\.q, this\.nHBuf, this\.ropeFreqBuf\]/,
     "RoPE Q bind group must include frequency factors");
-  assert.match(wgslSource, /rp_freq_factor: array<f32>/,
-    "WGSL must bind GGUF frequency factors");
+  assert.match(wgslSource, /struct RopeFactors \{ values: array<vec4<f32>, 16>, \}/,
+    "WGSL must expose a fixed 256-byte uniform for frequency factors");
+  assert.match(wgslSource, /var<uniform> rp_freq_factor: RopeFactors/,
+    "RoPE factors must not use a runtime-sized storage binding");
   assert.match(wgslSource, /let freq = baseFreq \/ freqFactor/,
     "WGSL must apply exact llama.cpp scaling factors");
   assert.match(wgslSource, /select\(i, 2u \* i, cfg\.ropeInterleaved != 0u\)/,
@@ -135,6 +135,13 @@ export async function verifyFieldBuild(dist) {
     "room runtime must retrieve Sources locally at question time");
   assert.match(roomSource, /sourceContext: sources\.text/,
     "only selected source excerpts must enter prompt assembly");
+  assert.match(roomSource, /ai\.gpuFatal = gmsg/,
+    "first WebGPU validation error must poison the current model instance");
+  assert.match(roomSource, /if \(ai\.gpuFatal\) throw new Error\(`GPU validation failed:/,
+    "generation must stop after a GPU validation failure rather than sample garbage");
+  assert.match(roomSource, /maxStorageBindingMB/,
+    "GPU diagnostics must record relevant adapter limits");
+
   assert.match(htmlSource, /id="sources-panel"/);
   assert.match(htmlSource, /field-station-sources\.js/);
   assert.match(htmlSource, /llama32-1b-q4/);
@@ -142,5 +149,5 @@ export async function verifyFieldBuild(dist) {
   await access(join(dist, "field-station-sources.js"));
   await access(join(dist, "field-station-sources.css"));
 
-  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, exact scaled-RoPE factors, QuantFactory sources and local document Sources are present.");
+  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, portable scaled-RoPE uniforms, GPU fail-fast guard, QuantFactory sources and local document Sources are present.");
 }
