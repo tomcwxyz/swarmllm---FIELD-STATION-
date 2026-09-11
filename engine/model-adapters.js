@@ -5,7 +5,9 @@
 // can be derived from the GGUF metadata/tensor index, and how a conversation is
 // represented to the model.
 
-import { GGML_EMBED, GGML_ROPE_FREQS, ggmlLayerNames } from "./gguf.js";
+import { GGML_EMBED, ggmlLayerNames } from "./gguf.js";
+
+const GGML_ROPE_FREQS = "rope_freqs.weight";
 
 export function normaliseGGUFArchitecture(value) {
   return String(value || "unknown").trim().toLowerCase().replaceAll("-", "").replaceAll("_", "");
@@ -38,10 +40,6 @@ function validateLlamaRope(G) {
   const type = llamaRopeScalingType(G?.meta || {});
   if (!type) return null;
   if (type !== "llama3") throw new Error(`Llama RoPE scaling ${type} is not implemented by FIELD STATION yet`);
-  // llama.cpp converts Llama 3.1/3.2's low/high-frequency scaling into a tiny
-  // rope_freqs.weight tensor in the GGUF. Using that tensor is preferable to
-  // re-deriving converter constants in the browser and keeps us byte-for-byte
-  // aligned with the exact model file being executed.
   const factors = G?.tensors?.[GGML_ROPE_FREQS];
   if (!factors) throw new Error("Llama3 scaled RoPE GGUF is missing rope_freqs.weight");
   if (!Array.isArray(factors.shape) || factors.shape.length !== 1)
@@ -114,11 +112,6 @@ function tokenId(vocab, name, requiredToken = true) {
   return null;
 }
 
-/**
- * Runtime conversation formatter used by field-station/conversation.js and the
- * generation stop condition. It deliberately exposes token-id operations rather
- * than templates/Jinja so the distributed loop stays deterministic and small.
- */
 export function chatRuntimeForStyle(style, tok) {
   if (!tok?.vocab || typeof tok.encode !== "function") throw new Error("model tokenizer is not ready");
   const vocab = tok.vocab;
@@ -130,17 +123,13 @@ export function chatRuntimeForStyle(style, tok) {
     const think = tokenId(vocab, "<think>", false);
     const thinkEnd = tokenId(vocab, "</think>", false);
     const stopTokens = new Set([imEnd, eot].filter(Number.isInteger));
-
     return Object.freeze({
       id: "chatml-qwen",
       conversationPrefix() { return []; },
-      encodeMessage(role, content) {
-        return [imStart, ...tok.encode(`${role}\n${content ?? ""}`), imEnd, ...tok.encode("\n")];
-      },
+      encodeMessage(role, content) { return [imStart, ...tok.encode(`${role}\n${content ?? ""}`), imEnd, ...tok.encode("\n")]; },
       assistantPrefix() {
         const ids = [imStart, ...tok.encode("assistant\n")];
-        if (Number.isInteger(think) && Number.isInteger(thinkEnd))
-          ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
+        if (Number.isInteger(think) && Number.isInteger(thinkEnd)) ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
         return ids;
       },
       stopTokens,
@@ -157,16 +146,11 @@ export function chatRuntimeForStyle(style, tok) {
     const eom = tokenId(vocab, "<|eom_id|>", false);
     const stopTokens = new Set([eot, eos, eom].filter(Number.isInteger));
     const header = (role) => [headerStart, ...tok.encode(String(role || "user")), headerEnd, ...tok.encode("\n\n")];
-
     return Object.freeze({
       id: "llama3-header",
       conversationPrefix() { return [bos]; },
-      encodeMessage(role, content) {
-        return [...header(role), ...tok.encode(String(content ?? "")), eot];
-      },
-      assistantPrefix() {
-        return header("assistant");
-      },
+      encodeMessage(role, content) { return [...header(role), ...tok.encode(String(content ?? "")), eot]; },
+      assistantPrefix() { return header("assistant"); },
       stopTokens,
       isStop(token) { return stopTokens.has(token); },
     });
@@ -175,48 +159,16 @@ export function chatRuntimeForStyle(style, tok) {
   throw new Error(`FIELD STATION chat style ${style || "unknown"} is not implemented`);
 }
 
-/** Resolve the GGUF architecture then construct its conversation formatter. */
 export function chatRuntimeFromGGUF(G, tok) {
   const adapter = resolveGGUFAdapter(G);
   if (!adapter) throw new Error(`GGUF architecture ${normaliseGGUFArchitecture(G?.meta?.["general.architecture"])} has no FIELD STATION adapter`);
   return chatRuntimeForStyle(adapter.promptStyle, tok);
 }
 
-/** Small, explicit adapter contract. */
 export const MODEL_ADAPTERS = Object.freeze({
-  qwen3: Object.freeze({
-    id: "qwen3-dense",
-    architecture: "qwen3",
-    metaPrefix: "qwen3",
-    engine: "dense",
-    status: "supported",
-    promptStyle: "chatml-qwen",
-    ropeLayout: "half",
-    defaultRopeTheta: 1_000_000,
-    configFromGGUF: denseConfigFromGGUF,
-  }),
-  qwen35: Object.freeze({
-    id: "qwen35-hybrid",
-    architecture: "qwen35",
-    metaPrefix: "qwen35",
-    engine: "qwen35",
-    status: "supported",
-    promptStyle: "chatml-qwen",
-  }),
-  // llama.cpp's Llama conversion permutes Q/K rows so adjacent values form each
-  // rotary pair. Llama 3.1/3.2's frequency scaling is carried by rope_freqs.weight
-  // and applied by the shared DenseEngine RoPE kernel when present.
-  llama: Object.freeze({
-    id: "llama-dense",
-    architecture: "llama",
-    metaPrefix: "llama",
-    engine: "dense",
-    status: "supported",
-    promptStyle: "llama3-header",
-    ropeLayout: "interleaved",
-    defaultRopeTheta: 500_000,
-    configFromGGUF: denseConfigFromGGUF,
-  }),
+  qwen3: Object.freeze({ id: "qwen3-dense", architecture: "qwen3", metaPrefix: "qwen3", engine: "dense", status: "supported", promptStyle: "chatml-qwen", ropeLayout: "half", defaultRopeTheta: 1_000_000, configFromGGUF: denseConfigFromGGUF }),
+  qwen35: Object.freeze({ id: "qwen35-hybrid", architecture: "qwen35", metaPrefix: "qwen35", engine: "qwen35", status: "supported", promptStyle: "chatml-qwen" }),
+  llama: Object.freeze({ id: "llama-dense", architecture: "llama", metaPrefix: "llama", engine: "dense", status: "supported", promptStyle: "llama3-header", ropeLayout: "interleaved", defaultRopeTheta: 500_000, configFromGGUF: denseConfigFromGGUF }),
   gemma: Object.freeze({ id: "gemma-dense", architecture: "gemma", engine: "dense", status: "planned", promptStyle: "model-template" }),
   gemma2: Object.freeze({ id: "gemma2-dense", architecture: "gemma2", engine: "dense", status: "planned", promptStyle: "model-template" }),
   gemma3: Object.freeze({ id: "gemma3-dense", architecture: "gemma3", engine: "dense", status: "planned", promptStyle: "model-template" }),
