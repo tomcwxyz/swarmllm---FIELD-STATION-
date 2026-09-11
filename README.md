@@ -35,11 +35,14 @@ It is now a substantially separate tool rather than a lightly modified SwarmLLM 
 
 The aim is not simply to run ever-bigger models. FIELD STATION is a place to test collective compute in realistic settings: different hardware, open models, local files and datasets, imperfect networks, and people trying to answer actual questions.
 
+The current edge experiment makes that question literal: **can a room of ordinary browser devices collectively run Llama 3 70B Q4_0 — roughly 40 GB of model — when none of those devices would comfortably run it alone?** See the [70B field protocol](docs/experiments/llama3-70b.md).
+
 ## What it can do now
 
 - **Distributed browser inference.** Split model layers across several devices; each participant contributes part of the compute and memory.
 - **Run locally on one device too.** The same room can be used as a solo WebGPU runtime for comparison and testing.
 - **Use multiple model families.** Qwen models remain available from the SwarmLLM base; FIELD STATION adds a model-adapter layer and experimental Llama 3 / Llama 3.2 support.
+- **Attempt room-scale Llama.** Llama 3 70B Q4_0 is now an explicit collective-compute target, with 80 layers distributed by pledged capacity, K/V-cache-aware planning and a capable-host check for the large output head.
 - **Bring local Sources.** TXT, Markdown, JSON and CSV files are parsed in the browser. The full file stays on the device that selected it; only retrieved material enters the distributed inference prompt.
 - **Understand CSVs as datasets.** CSV Sources are profiled locally for row/column counts, inferred types, missingness, numeric summaries, date ranges and common categorical values, with matching rows retrieved for specific questions.
 - **Inspect unfamiliar GGUFs.** Preflight checks model architecture and metadata before committing to a large download or unsupported runtime path.
@@ -56,9 +59,20 @@ The catalogue changes as experiments progress. At the moment it includes:
 | Llama 3 8B Instruct Q4_0 | experimental, working in field tests | First native Llama target |
 | Llama 3.2 1B Instruct Q4_0 | experimental | Cheap scaled-RoPE test target |
 | Llama 3.2 3B Instruct Q4_0 | experimental | More useful small-model scaled-RoPE target |
+| **Llama 3 70B Instruct Q4_0** | **collective experiment; field run pending** | ~40 GB model / ~41.5 GB room target across multiple devices |
 | SmolLM2 135M | inherited | Tiny runtime/demo target |
 
-“Experimental” matters. A model appearing in the picker does not mean we have completed deterministic reference testing across every supported device topology. See the experiment notes and roadmap for current evidence rather than treating the table as a compatibility guarantee.
+“Experimental” matters. A model appearing in the picker does not mean we have completed deterministic reference testing across every supported device topology. In particular, **70B is now engineered for a first attempt, not claimed as proven working**. See the experiment notes and roadmap for current evidence rather than treating the table as a compatibility guarantee.
+
+### 70B requirements
+
+The first Llama 3 70B route uses the exact QuantFactory Q4_0 GGUF and deliberately stays on original Llama 3's already-understood dense/unscaled-RoPE architecture.
+
+FIELD STATION currently asks for approximately **41.5 GB pledged across the room**. One participating desktop/laptop must also be capable of acting as host for the separate Llama output head; the catalogue gate requires at least **0.55 GB per WebGPU storage binding** on that host. The planner accounts for the K/V cache as well as model weights.
+
+The host keeps the quantised token embedding CPU-side for row lookup and streams the separate output head to GPU, avoiding a duplicate GPU copy of the embedding. Very large model ranges are also excluded from the browser weight-cache clone path. The next unknown is empirical: whether ordinary browser processes can survive the 70B host embedding fetch/repack and collectively bring all 80 layers online.
+
+See [`docs/experiments/llama3-70b.md`](docs/experiments/llama3-70b.md) for the exact target, test topology, milestones and evidence to capture.
 
 ## Sources and privacy
 
@@ -109,7 +123,7 @@ host      final norm → model head → next token
 
 The important unit sent between devices is the model's hidden activation, not the entire model state. Each device downloads and retains only the weights assigned to its layer slice. The host coordinates the generation loop, while WebRTC carries activations between peers.
 
-FIELD STATION currently builds on SwarmLLM's custom WebGPU/WGSL inference engine rather than wrapping WebLLM, llama.cpp or a remote inference API. FIELD STATION additions include model adapters and chat framing, Llama GGUF rotary-layout/scaling support, local Source processing, room UX, diagnostics and experiment-oriented guardrails.
+FIELD STATION currently builds on SwarmLLM's custom WebGPU/WGSL inference engine rather than wrapping WebLLM, llama.cpp or a remote inference API. FIELD STATION additions include model adapters and chat framing, Llama GGUF rotary-layout/scaling support, local Source processing, room UX, diagnostics, large-model memory planning and experiment-oriented guardrails.
 
 ## Repository layout
 
@@ -146,9 +160,10 @@ If work here is generally useful to distributed browser inference, upstreaming i
 The active work is less about polishing a conventional chat product and more about learning from the system:
 
 - deterministic Llama 3.x reference and multi-device equivalence testing;
+- the first reproducible **Llama 3 70B multi-device load and reference run**;
+- if 70B exposes it, streaming host-side embedding repack and eventually global-tensor sharding for lower-limit devices;
 - richer local analysis of attached datasets rather than simply placing rows in context;
 - PDF and other local Source types;
-- larger Llama experiments, including what has to change when model components themselves exceed a single browser/GPU buffer;
 - clearer evidence about the practical trade-offs between device count, memory, network latency, energy and useful model size.
 
 See [`roadmap/`](roadmap/) for the working plan and [`docs/experiments/`](docs/experiments/) for field protocols and results.
