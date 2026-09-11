@@ -1,129 +1,168 @@
 <p align="center">
-  <a href="https://swarmllm.ai"><img src="favicon.svg" width="72" alt="SwarmLLM"></a>
+  <img src="favicon.svg" width="76" alt="FIELD STATION contour mark">
 </p>
-<h1 align="center">SwarmLLM</h1>
-<p align="center"><b>Every device brings a slice. Together they run the whole model.</b></p>
+<h1 align="center">FIELD STATION</h1>
+<p align="center"><b>Collective compute for real-world questions.</b></p>
+<p align="center">Pool ordinary devices together to run open language models in the browser.</p>
+
 <p align="center">
-  <a href="https://swarmllm.ai">Site</a> ·
-  <a href="https://swarmllm.ai/room">Start a swarm</a> ·
   <a href="docs/architecture.md">Architecture</a> ·
-  <a href="docs/bench-log.md">Benchmarks</a> ·
+  <a href="docs/experiments/">Experiments</a> ·
   <a href="roadmap/">Roadmap</a> ·
-  <a href="SECURITY.md">Threat model</a> ·
+  <a href="SECURITY.md">Security</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
+
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-2b4eff">
-  <img alt="runtime" src="https://img.shields.io/badge/runs%20on-WebGPU%20%2B%20WebRTC-16171c">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-16171c">
+  <img alt="runtime" src="https://img.shields.io/badge/runtime-WebGPU%20%2B%20WebRTC-16171c">
+  <img alt="status" src="https://img.shields.io/badge/status-experimental-f06f8b">
 </p>
 
-https://github.com/user-attachments/assets/4f349e4b-c699-45da-abe8-e9162689293e
+## What is FIELD STATION?
 
-<p align="center"><sub>Demo, recorded September 7, 2026: Qwen 3.8 27B across a MacBook and an iPhone in browser tabs, same Wi‑Fi, 400 tokens at 10.7 tok/s. <a href="https://github.com/Nehanth/swarmllm/releases/download/v0.2.0/swarmllm-demo-2026-09-07.mp4">Download</a>.</sub></p>
+FIELD STATION is an experimental, browser-based tool for **collective AI compute**. A room of laptops, desktops and other WebGPU-capable devices can pool memory and GPU work so that, together, they can run a model that may be uncomfortable or impossible for one device alone.
 
-SwarmLLM runs large language models across the devices in a room, in their browser tabs. Each device holds a slice of the model; a 10 KB activation vector passes between them over direct WebRTC connections. Nothing to install, no accounts, no server does any thinking.
+There is no account and no inference server. Model layers are distributed across participating browsers and intermediate activations move directly between them over WebRTC.
 
-- **27B in browser tabs.** Qwen 3.8 27B (15 GB of Q4_0 weights) across laptops, phones and PCs that individually can't hold it.
-- **Native-competitive decode.** A from-scratch WebGPU engine (~50 WGSL kernels) at the memory roofline: 9.0 tok/s plain and 16 tok/s with speculative decoding on a GB10, where native llama.cpp measures 8.0 on the same file and GPU. ([bench log](docs/bench-log.md))
-- **Bit-exact by construction.** Every optimization is gated on golden tests; the speculative path produces the same stream as plain decoding.
-- **Cross-network.** Rooms span networks via WebRTC; prefill sends 16 tokens per round trip and decode chains speculative drafts so a slow link still moves several tokens per lap.
-- **Nothing leaves the room.** A room is a shared conversation: everyone in it sees the questions and answers, by design. No server ever sees them, and the devices running layers work on mid-model activations, which are *not* private against a determined peer either (see [SECURITY.md](SECURITY.md)).
+FIELD STATION began as a fork of [SwarmLLM](https://github.com/Nehanth/swarmllm), created by Nehanth Narendrula. SwarmLLM supplied the core idea and a substantial part of the distributed browser inference engine that remains underneath this project.
+
+It is now a substantially separate tool rather than a lightly modified SwarmLLM demo. FIELD STATION has its own interface, room and safety model, model-compatibility layer, local Sources workflow, diagnostics, experiment protocols, build verification and roadmap. We continue to credit SwarmLLM wherever inherited work remains and do not treat upstream benchmark results as FIELD STATION results.
+
+### The question behind it
+
+> What becomes possible when several ordinary devices can become one AI computer?
+
+The aim is not simply to run ever-bigger models. FIELD STATION is a place to test collective compute in realistic settings: different hardware, open models, local files and datasets, imperfect networks, and people trying to answer actual questions.
+
+## What it can do now
+
+- **Distributed browser inference.** Split model layers across several devices; each participant contributes part of the compute and memory.
+- **Run locally on one device too.** The same room can be used as a solo WebGPU runtime for comparison and testing.
+- **Use multiple model families.** Qwen models remain available from the SwarmLLM base; FIELD STATION adds a model-adapter layer and experimental Llama 3 / Llama 3.2 support.
+- **Bring local Sources.** TXT, Markdown, JSON and CSV files are parsed in the browser. The full file stays on the device that selected it; only retrieved material enters the distributed inference prompt.
+- **Understand CSVs as datasets.** CSV Sources are profiled locally for row/column counts, inferred types, missingness, numeric summaries, date ranges and common categorical values, with matching rows retrieved for specific questions.
+- **Inspect unfamiliar GGUFs.** Preflight checks model architecture and metadata before committing to a large download or unsupported runtime path.
+- **Expose the experiment.** FIELD STATION records model, device, loading, context, performance and first-failure diagnostics so unsuccessful runs are useful evidence rather than silent breakage.
+
+## Experimental model status
+
+The catalogue changes as experiments progress. At the moment it includes:
+
+| Model | FIELD STATION status | Purpose |
+|---|---|---|
+| Qwen3 0.6B / 1.7B / 4B | inherited / working paths | Small dense baselines and compatibility tests |
+| Qwen 3.8 27B | inherited SwarmLLM path | Large distributed-compute baseline |
+| Llama 3 8B Instruct Q4_0 | experimental, working in field tests | First native Llama target |
+| Llama 3.2 1B Instruct Q4_0 | experimental | Cheap scaled-RoPE test target |
+| Llama 3.2 3B Instruct Q4_0 | experimental | More useful small-model scaled-RoPE target |
+| SmolLM2 135M | inherited | Tiny runtime/demo target |
+
+“Experimental” matters. A model appearing in the picker does not mean we have completed deterministic reference testing across every supported device topology. See the experiment notes and roadmap for current evidence rather than treating the table as a compatibility guarantee.
+
+## Sources and privacy
+
+FIELD STATION is **local-first, not confidential**.
+
+When you add a Source, the complete file is read and processed locally in that browser. It is not uploaded to a FIELD STATION server. For a question, the browser builds a compact source context — for example selected text passages or a dataset profile — and only that material is added to the model prompt.
+
+Once source material enters a prompt, participating devices help compute on it. Treat prompts, selected source excerpts and model activations as potentially visible to other room participants. **Do not use FIELD STATION for sensitive, confidential or personal data.** WebRTC encrypts traffic in transit; it does not make an untrusted participant a private compute environment. See [SECURITY.md](SECURITY.md).
 
 ## Quick start
 
-**Use it:** open [swarmllm.ai/room](https://swarmllm.ai/room), create a room, share the code, pick a model, start. Every device downloads only its layers (cached for next time).
-
-**Run it locally:**
+FIELD STATION is a static browser application with a build step that applies and verifies FIELD STATION's runtime patches.
 
 ```bash
-git clone https://github.com/Nehanth/swarmllm && cd swarmllm
-npx -y serve -l 8080 .        # any static server works; then open http://localhost:8080/room
+git clone https://github.com/tomcwxyz/swarmllm---FIELD-STATION-.git
+cd swarmllm---FIELD-STATION-
+npm install
+npm run serve:field
 ```
 
-**Hack on the engine** (needs [Deno](https://deno.com) 2.x and a WebGPU-capable GPU; model files go under `models/`, see [docs/models.md](docs/models.md)):
+Then open `http://localhost:8080`, create a room and optionally invite more devices with the protected room link.
+
+Useful commands:
 
 ```bash
-npm test              # unit tests, no GPU
-npm run test:gpu      # golden tests on Qwen3 0.6B
-npm run test:q38      # 27B suites incl. speculative-vs-plain equality
-npm run bench:q38     # decode / prefill tok/s
+npm run build:field   # build the FIELD STATION distributable into dist/
+npm run serve:field   # build and serve it locally
+npm test              # unit tests (requires Deno 2.x)
+npm run test:gpu      # upstream/engine GPU tests
+npm run e2e           # browser room test
 ```
 
-## How it works
+## How collective inference works
 
+At a high level:
+
+```text
+host      token / embedding
+   ↓
+peer A    first slice of transformer layers
+   ↓
+peer B    next slice
+   ↓
+peer C    next slice
+   ↓
+host      final norm → model head → next token
 ```
-host      embed the last token → hidden state (5,120 floats)
-   ↓ 10 KB over WebRTC
-peer A    layers 0–21           ─┐
-peer B    layers 22–42           ├─ each device runs its slice on its own GPU
-peer C    layers 43–63          ─┘
-   ↓ back to the host
-host      final norm → LM head → sample → next token (and the draft head guesses the one after)
-```
 
-Generating a token is memory-bound: every token reads all of the weights once. So the engine's job is reading fewer bytes (4-bit blocks with f16 scales) and reading them well (64 threads sweep each row together, dequantize in registers, reduce in shared memory), with one command submit per token. The runtime's job is making network laps carry more: batched prefill, and multi-token-prediction speculation verified in a single batched pass with exact rollback of the recurrent state. Details: [docs/architecture.md](docs/architecture.md), [docs/kernels.md](docs/kernels.md), [docs/protocol.md](docs/protocol.md).
+The important unit sent between devices is the model's hidden activation, not the entire model state. Each device downloads and retains only the weights assigned to its layer slice. The host coordinates the generation loop, while WebRTC carries activations between peers.
 
-## How it compares
-
-Other projects split or share models across machines. The differences are what has to be installed and where the model runs.
-
-| | Model per device | Devices | Install | Network |
-|---|---|---|---|---|
-| **SwarmLLM** | a slice of layers | laptops and phones, any OS with a WebGPU browser | none, open a URL | same Wi‑Fi or across the internet (WebRTC) |
-| exo | a slice of layers | machines that run Python and MLX or tinygrad | Python package per node | one network |
-| llama.cpp `rpc-server` | a slice of layers | machines that run the binary | binary and an open port per node; the docs say not for untrusted networks | LAN in practice |
-| Petals | a slice of layers | server GPUs in a public swarm | Python client and server | internet, public swarm |
-| distributed-llama | a slice of layers | Linux boxes and Raspberry Pis | binary per node | LAN |
-| WebLLM / MLC, transformers.js | the whole model | one browser tab | none | none needed |
-| Ollama, llmman | the whole model | one machine per request | native app | routing between machines, no splitting |
-
-The engine underneath is our own WGSL, not WebLLM, MLC or llama.cpp; the model weights and tokenizer come from Qwen, hosting from Hugging Face, and signaling only from PeerJS.
-
-## Supported models
-
-| Model | Format | Notes |
-|---|---|---|
-| Qwen 3.8 27B | GGUF Q4_0 | hybrid Gated-DeltaNet + attention; MTP speculation |
-| Qwen3 0.6B / 1.7B / 4B | GGUF Q8_0 / Q4_0 | dense; used for golden tests |
-| SmolLM2 135M | safetensors f32 | smallest demo |
-
-Browsers: Chrome on macOS is the tested host. Safari on an iPhone joins a room and holds a small slice; Safari on a Mac reloads the tab under memory pressure when it holds the 27B's large slice, so do not host from it. Firefox and Linux Chromium need WebGPU enabled and are untested by us. Headless: Deno 2 (wgpu). See [docs/models.md](docs/models.md).
-
-## Performance
-
-Qwen 3.8 27B Q4_0, greedy, bit-identical output at every row. Full history with commits in [docs/bench-log.md](docs/bench-log.md).
-
-| Device | Decode plain | Decode speculative | Prefill | Native llama.cpp, same GGUF, same machine |
-|---|---|---|---|---|
-| NVIDIA GB10 (Deno / Vulkan, headless) | 9.0 tok/s | 16.1 tok/s | 44 tok/s | 8.0 decode (tg32), 377 prefill (pp86), CUDA build 749f688 |
-| MacBook Pro (Chrome / Metal), solo | 6.7 tok/s | 10.8 tok/s | ~20 tok/s | — |
-| MacBook Pro + iPhone, same Wi‑Fi, 62 + 2 layers | — | 7.7 tok/s | 8.5 s for a 169-token prompt | — |
-| Cross-internet room (host + peer) | — | 3.5–6 tok/s | — | — |
-
-Decode on the GB10 runs at the memory bandwidth a WebGPU buffer read can reach on that machine (183 of 184 GB/s measured), which is why it is ahead of the native build there. Prefill is the known gap: the DeltaNet recurrence is serial and the prefill GEMM is young. One token's hidden state on the wire is 10 KB (5,120 × f16).
+FIELD STATION currently builds on SwarmLLM's custom WebGPU/WGSL inference engine rather than wrapping WebLLM, llama.cpp or a remote inference API. FIELD STATION additions include model adapters and chat framing, Llama GGUF rotary-layout/scaling support, local Source processing, room UX, diagnostics and experiment-oriented guardrails.
 
 ## Repository layout
 
+```text
+field-station/            FIELD STATION conversation, model-capability and Source logic
+field-station-*.js/css    FIELD STATION browser shell, diagnostics, model and Sources UI
+field-room.html           FIELD STATION room interface
+engine/                   WebGPU inference engine inherited from / evolved from SwarmLLM
+room/ + room.js           distributed room runtime, transport and model catalogue
+scripts/                  FIELD STATION build patches and build-time verification
+docs/                     architecture, security/technical notes and experiment records
+roadmap/                  active research and engineering roadmap
+tests/                    unit, GPU, reference and end-to-end tests
+benchmarks/               engine benchmark harnesses
 ```
-engine/            the runtime (ES modules; engine.js re-exports the public API)
-  dense.js         DenseEngine: dense Llama-architecture models (Qwen3, SmolLM)
-  qwen35.js        Qwen35Engine: hybrid Gated-DeltaNet + attention, batched paths, MTP speculation
-  gguf.js          GGUF parsing, quantization repacking, streaming upload
-  wgsl/            base.js (shared kernels) · coop.js (generated GEMV family) · qwen35.js (DeltaNet kernels)
-  tokenizer.js · sampling.js · quant.js · autotune.js · selftest.js · safetensors.js
-room.js + room/    the room: signaling, mesh, weight streaming, generation loop; wire/markdown/sampling/models helpers
-index.html         landing page          p2p.html   the room's markup (served at /room)
-tests/             GPU golden tests · unit/ (no GPU) · golden/ · reference/ · run.sh
-benchmarks/        tok/s harnesses, kernel-family profiler, GEMM prototype
-docs/              architecture · tech-stack · kernels (every trick, measured) · protocol · models · bench log · research · agents (rules for automated contributors)
-roadmap/           one file per planned item with status, design and done-criteria
-```
+
+A deliberate project convention is that several FIELD STATION changes are applied to the copied runtime during `npm run build:field`. Those patches have exact markers and the build fails when upstream/runtime structure drifts instead of silently producing a partially patched application.
+
+## Relationship to SwarmLLM
+
+This repository would not exist without [SwarmLLM](https://github.com/Nehanth/swarmllm). The project began by asking whether SwarmLLM's distributed browser inference could form the basis of a FIELD STATION experiment, and then diverged as the research questions widened.
+
+In practical terms:
+
+- the **distributed WebGPU inference foundation** is derived from SwarmLLM;
+- FIELD STATION has substantially changed the **tool, interface and experimental runtime around that foundation**;
+- upstream SwarmLLM performance claims, demos and test results are not automatically claims about FIELD STATION;
+- where we modify inherited code, we aim to preserve attribution and make the boundary visible rather than erase the history of the fork.
+
+If work here is generally useful to distributed browser inference, upstreaming it back to SwarmLLM should be considered where practical.
+
+## Current research directions
+
+The active work is less about polishing a conventional chat product and more about learning from the system:
+
+- deterministic Llama 3.x reference and multi-device equivalence testing;
+- richer local analysis of attached datasets rather than simply placing rows in context;
+- PDF and other local Source types;
+- larger Llama experiments, including what has to change when model components themselves exceed a single browser/GPU buffer;
+- clearer evidence about the practical trade-offs between device count, memory, network latency, energy and useful model size.
+
+See [`roadmap/`](roadmap/) for the working plan and [`docs/experiments/`](docs/experiments/) for field protocols and results.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [GOVERNANCE.md](GOVERNANCE.md). Benchmark reports from hardware we don't have are especially welcome (there's an issue template).
+FIELD STATION benefits particularly from **real hardware evidence**: different browsers, GPUs, phones, networks and model files expose assumptions quickly. Reproducible failures are useful results.
 
-## Citation
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [GOVERNANCE.md](GOVERNANCE.md).
+
+## Upstream credit and acknowledgements
+
+**SwarmLLM** — Nehanth Narendrula  
+[github.com/Nehanth/swarmllm](https://github.com/Nehanth/swarmllm)
 
 ```bibtex
 @software{swarmllm2026,
@@ -134,10 +173,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [GOVERNANCE.md](GOVERNANCE.md). Bench
 }
 ```
 
-## Acknowledgements
-
-Model weights and the GGUF format come from the [Qwen](https://huggingface.co/Qwen) team and [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp), whose speculative-decoding graph for Qwen 3.5/3.8 was the reference for ours. Prior work that shaped this: [Petals](https://github.com/bigscience-workshop/petals), [exo](https://github.com/exo-explore/exo), [WebLLM](https://github.com/mlc-ai/web-llm), [LlamaWeb](https://arxiv.org/abs/2605.20706), and the Gated DeltaNet and PipeInfer papers.
+FIELD STATION also depends on work from the open model and inference ecosystem, including [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp), [Qwen](https://huggingface.co/Qwen), Meta's Llama models, Hugging Face model hosting, and PeerJS. Prior work referenced by the inherited SwarmLLM engine includes Petals, exo, WebLLM, LlamaWeb, Gated DeltaNet and PipeInfer.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Existing upstream attribution and licence history remain part of the repository.
