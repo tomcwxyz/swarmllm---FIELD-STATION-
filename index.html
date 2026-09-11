@@ -3,18 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="A FIELD STATION experiment in collective compute: can several ordinary devices become one AI computer?">
+<meta name="description" content="Shared AI — a FIELD STATION experiment in collective compute: can several ordinary devices become one AI computer?">
 <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/field-station.css">
-<title>Collective compute · FIELD STATION</title>
+<title>Shared AI · a FIELD STATION experiment</title>
 </head>
 <body>
 <div class="landing">
   <header class="shell-header">
-    <a class="fs-wordmark" href="/">FIELD STATION <span class="fs-mark">· COLLECTIVE COMPUTE</span></a>
+    <a class="fs-wordmark" href="/">SHARED AI <span class="fs-mark">· A FIELD STATION EXPERIMENT</span></a>
     <span class="spacer"></span>
+    <a class="source" href="https://fieldstation.xyz/" rel="noopener">FIELD STATION ↗</a>
     <a class="source" href="https://github.com/tomcwxyz/swarmllm---FIELD-STATION-" rel="noopener">Source ↗</a>
     <button id="theme-toggle" class="fs-theme-toggle" type="button">Dark</button>
   </header>
@@ -23,7 +24,7 @@
     <section class="landing-copy">
       <div class="fs-type">EXPERIMENT · DISTRIBUTED INFERENCE</div>
       <h1><span class="lo">What if the computer was</span> <strong>the room?</strong></h1>
-      <p class="lede">We are testing whether ordinary phones, laptops and tablets can pool their spare computing capacity and run a single AI model together. Each device holds part of the model; the room becomes the computer.</p>
+      <p class="lede">Shared AI tests whether ordinary phones, laptops and tablets can pool their spare computing capacity and run a single AI model together. Each device holds part of the model; the room becomes the computer.</p>
       <div class="landing-actions">
         <a class="fs-btn fs-btn--primary" href="/room">Run the experiment →</a>
         <a class="fs-btn" href="#apparatus">See the apparatus ↓</a>
@@ -31,7 +32,7 @@
     </section>
 
     <aside class="experiment-card" id="apparatus">
-      <div class="number">FIELD TEST · COLLECTIVE COMPUTE</div>
+      <div class="number">SHARED AI · FIELD TEST</div>
       <h2>One model. Several devices.</h2>
       <p>There is no model API doing the inference in the middle. Each browser downloads only its assigned model layers, computes them locally with WebGPU, then passes intermediate activations to the next participating device over WebRTC.</p>
       <div class="fs-warning"><strong>Nothing entered here should be private.</strong> Participating devices are part of the computation, and model activations should be treated as potentially recoverable by participants.</div>
@@ -40,14 +41,14 @@
         <dt>Runtime</dt><dd>WebGPU + WebRTC</dd>
         <dt>Quick model</dt><dd>Qwen3 0.6B Q4 · ~429 MB total</dd>
         <dt>Weights</dt><dd>Downloaded directly from Hugging Face</dd>
-        <dt>Built on</dt><dd>SwarmLLM · MIT</dd>
+        <dt>Built from</dt><dd>SwarmLLM · MIT</dd>
       </dl>
     </aside>
   </main>
 
   <footer class="landing-footer">
-    <span>FIELD STATION · FUTURE WORK / TECHNOLOGY / SOCIETY</span>
-    <span class="signal-line">Live experiment surface</span>
+    <span>SHARED AI · A <a href="https://fieldstation.xyz/">FIELD STATION</a> EXPERIMENT</span>
+    <span class="signal-line">Collective AI field test</span>
   </footer>
 </div>
 <script src="/field-station-shell.js"></script>
