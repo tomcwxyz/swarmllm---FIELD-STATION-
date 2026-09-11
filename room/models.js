@@ -32,8 +32,10 @@ export const MODELS = {
   // dense RMSNorm/GQA/SwiGLU shape the engine already executes and no scaled-RoPE
   // feature. Q4_0 stays on the native streaming path so this experiment tests the
   // architecture adapter rather than the K-quant conversion path at the same time.
+  // QuantFactory is also used by another FIELD STATION catalogue model and is a
+  // better browser/range-fetch source than the original tensorblock test URL.
   "llama3-8b-q4": { label: "Llama 3 8B · Q4 · experimental", kind: "gguf",
-    gguf: "https://huggingface.co/tensorblock/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_0.gguf" },
+    gguf: "https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct.Q4_0.gguf" },
   "qwen3.8-27b": { label: "Qwen 3.8 27B · Q4", kind: "qwen35",
     gguf: "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q4_0.gguf" },
   "smollm-135m": { label: "SmolLM 135M · bf16", kind: "safetensors",
