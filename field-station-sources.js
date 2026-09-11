@@ -1,4 +1,4 @@
-import { buildSourceContext, chunkSource, normaliseSourceText } from "./field-station/sources.js";
+import { buildSourceContext, chunkCSVRows, chunkSource, normaliseSourceText, profileCSV } from "./field-station/sources.js";
 
 const $ = (id) => document.getElementById(id);
 const files = new Map();
@@ -35,7 +35,11 @@ function render() {
     const name = document.createElement("strong");
     name.textContent = item.name;
     const detail = document.createElement("span");
-    detail.textContent = `${displayBytes(item.bytes)} · ${item.chunks.length} excerpt${item.chunks.length === 1 ? "" : "s"}`;
+    if (item.dataset) {
+      detail.textContent = `${displayBytes(item.bytes)} · ${item.dataset.rowCount} rows · ${item.dataset.columnCount} columns`;
+    } else {
+      detail.textContent = `${displayBytes(item.bytes)} · ${item.chunks.length} excerpt${item.chunks.length === 1 ? "" : "s"}`;
+    }
     meta.append(name, detail);
     const remove = document.createElement("button");
     remove.type = "button";
@@ -69,9 +73,23 @@ async function addFiles(fileList) {
     try {
       const text = await textForFile(file);
       const id = `${file.name}:${file.size}:${file.lastModified}`;
-      const chunks = chunkSource({ name: file.name, text });
-      if (!chunks.length) { toast(`${file.name}: no readable text found.`); continue; }
-      files.set(id, { id, name: file.name, bytes: file.size, chunks });
+      let chunks, dataset = null;
+      if (ext === "csv") {
+        dataset = profileCSV({ name: file.name, text });
+        chunks = chunkCSVRows(dataset);
+        if (!dataset.headers.length || !dataset.rows.length) { toast(`${file.name}: no readable CSV rows found.`); continue; }
+      } else {
+        chunks = chunkSource({ name: file.name, text });
+        if (!chunks.length) { toast(`${file.name}: no readable text found.`); continue; }
+      }
+      files.set(id, { id, name: file.name, bytes: file.size, chunks, dataset });
+      window.fieldStationDiagnostics?.record("source:added", {
+        kind: dataset ? "csv" : ext,
+        bytes: file.size,
+        rows: dataset?.rowCount || null,
+        columns: dataset?.columnCount || null,
+        chunks: chunks.length,
+      });
     } catch (error) {
       toast(`${file.name}: could not read file (${error?.message || error}).`);
     }
@@ -83,9 +101,20 @@ function allChunks() {
   return [...files.values()].flatMap((file) => file.chunks);
 }
 
+function allDatasets() {
+  return [...files.values()].map((file) => file.dataset).filter(Boolean);
+}
+
 function contextFor(query) {
   if (!files.size) return { text: "", labels: [], chunks: 0 };
-  return buildSourceContext(allChunks(), query, { maxChars: 2200, maxChunks: 4 });
+  const context = buildSourceContext(allChunks(), query, { datasets: allDatasets(), maxChars: 3000, maxChunks: 3 });
+  window.fieldStationDiagnostics?.record("source:context", {
+    files: files.size,
+    datasets: allDatasets().length,
+    selectedPieces: context.chunks,
+    chars: context.text.length,
+  });
+  return context;
 }
 
 function install() {
