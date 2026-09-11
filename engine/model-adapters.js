@@ -5,7 +5,7 @@
 // can be derived from the GGUF metadata/tensor index, and how a conversation is
 // represented to the model.
 
-import { GGML_EMBED, ggmlLayerNames } from "./gguf.js";
+import { GGML_EMBED, GGML_ROPE_FREQS, ggmlLayerNames } from "./gguf.js";
 
 export function normaliseGGUFArchitecture(value) {
   return String(value || "unknown").trim().toLowerCase().replaceAll("-", "").replaceAll("_", "");
@@ -34,12 +34,27 @@ function llamaRopeScalingType(meta) {
   return type && type !== "none" ? type : null;
 }
 
+function validateLlamaRope(G) {
+  const type = llamaRopeScalingType(G?.meta || {});
+  if (!type) return null;
+  if (type !== "llama3") throw new Error(`Llama RoPE scaling ${type} is not implemented by FIELD STATION yet`);
+  // llama.cpp converts Llama 3.1/3.2's low/high-frequency scaling into a tiny
+  // rope_freqs.weight tensor in the GGUF. Using that tensor is preferable to
+  // re-deriving converter constants in the browser and keeps us byte-for-byte
+  // aligned with the exact model file being executed.
+  const factors = G?.tensors?.[GGML_ROPE_FREQS];
+  if (!factors) throw new Error("Llama3 scaled RoPE GGUF is missing rope_freqs.weight");
+  if (!Array.isArray(factors.shape) || factors.shape.length !== 1)
+    throw new Error("Llama3 rope_freqs.weight must be a 1D frequency-factor tensor");
+  return type;
+}
+
 /**
  * Build the DenseEngine config from a dense GGUF header.
  *
- * Qwen3 and original Llama 3 share the DenseEngine's RMSNorm + GQA + SwiGLU
- * execution shape. Llama GGUF conversion permutes Q/K rows for interleaved RoPE,
- * so the adapter also owns the RoPE layout expected by the runtime.
+ * Qwen3 and Llama 3 share the DenseEngine's RMSNorm + GQA + SwiGLU execution
+ * shape. Llama GGUF conversion permutes Q/K rows for interleaved RoPE, while
+ * Llama 3.1/3.2 can additionally carry exact per-frequency scaling factors.
  */
 export function denseConfigFromGGUF(G) {
   const meta = G?.meta || {};
@@ -48,10 +63,7 @@ export function denseConfigFromGGUF(G) {
   if (!adapter || adapter.engine !== "dense" || adapter.status !== "supported") {
     throw new Error(`GGUF architecture ${architecture} does not have a FIELD STATION dense adapter`);
   }
-  if (architecture === "llama") {
-    const scaling = llamaRopeScalingType(meta);
-    if (scaling) throw new Error(`Llama RoPE scaling ${scaling} is not implemented by FIELD STATION yet`);
-  }
+  const ropeScaling = architecture === "llama" ? validateLlamaRope(G) : null;
 
   const prefix = adapter.metaPrefix || architecture;
   const names = ggmlLayerNames(0);
@@ -87,6 +99,7 @@ export function denseConfigFromGGUF(G) {
     rms_norm_eps: required(rms, `${prefix}.attention.layer_norm_rms_epsilon`),
     rope_theta: required(rope, `${prefix}.rope.freq_base`),
     rope_interleaved: adapter.ropeLayout === "interleaved",
+    rope_scaling_type: ropeScaling,
   };
 
   const context = finitePositive(meta[`${prefix}.context_length`]);
@@ -191,8 +204,8 @@ export const MODEL_ADAPTERS = Object.freeze({
     promptStyle: "chatml-qwen",
   }),
   // llama.cpp's Llama conversion permutes Q/K rows so adjacent values form each
-  // rotary pair. Keep those weights untouched and make the runtime use the same
-  // interleaved layout. Scaled-RoPE Llama variants still fail closed above.
+  // rotary pair. Llama 3.1/3.2's frequency scaling is carried by rope_freqs.weight
+  // and applied by the shared DenseEngine RoPE kernel when present.
   llama: Object.freeze({
     id: "llama-dense",
     architecture: "llama",
