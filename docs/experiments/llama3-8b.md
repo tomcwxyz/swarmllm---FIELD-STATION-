@@ -1,7 +1,7 @@
 # Experiment · Llama 3 8B across ordinary devices
 
 **Status:** implementation ready for field verification  
-**Target:** `Meta-Llama-3-8B-Instruct-Q4_0.gguf`  
+**Target:** `Meta-Llama-3-8B-Instruct.Q4_0.gguf`  
 **Question:** can several ordinary browser devices collectively run a useful 8B model while preserving the same answer as a single reference runtime?
 
 This is the first FIELD STATION experiment whose main purpose is **cross-architecture evidence**, not another Qwen benchmark. The target deliberately uses Q4_0 because FIELD STATION already streams that tensor format directly to WebGPU. That keeps the experiment focused on the Llama adapter, chat format, GGUF Q/K layout and distributed execution.
@@ -21,8 +21,10 @@ Until those three checks pass, the catalogue label stays `experimental`.
 Built-in catalogue key: `llama3-8b-q4`
 
 ```text
-https://huggingface.co/tensorblock/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_0.gguf
+https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct.Q4_0.gguf
 ```
+
+The first attempted source was `tensorblock/Meta-Llama-3-8B-Instruct-GGUF`. In the browser field test it returned a non-206 response to FIELD STATION's HTTP Range request and the load stopped with `model host refused range requests`. The experiment therefore moved to the QuantFactory Q4_0 build. FIELD STATION already uses a QuantFactory-hosted GGUF elsewhere in the catalogue, and keeping Range support as a hard requirement prevents an accidental multi-gigabyte whole-file download.
 
 Expected characteristics:
 
@@ -101,6 +103,7 @@ Original Llama 3 is the deliberate first target. Llama 3.1/3.2-style scaled-RoPE
 
 ## Failure interpretation
 
+- **Range request fails before preflight:** model-host/storage compatibility problem. Keep the hard 206 requirement; do not fall back to downloading the complete GGUF.
 - **Preflight fails:** metadata/tensor/host compatibility problem; do not download weights.
 - **R1 differs immediately from llama.cpp:** local runtime/model-adapter bug, most likely tensor mapping, RoPE layout, tokenizer or chat framing.
 - **R1 matches but R2/R3 differ:** distributed transport/sharding problem rather than Llama architecture support.
