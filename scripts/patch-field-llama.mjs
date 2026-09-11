@@ -36,6 +36,12 @@ export async function patchFieldLlamaRuntime(densePath, wgslPath) {
   );
   dense = replaceOnce(
     dense,
+    "        if (hasHead) this.headEntry = up(W.embed);",
+    "        // Untied Llama heads have their own output.weight. Do not upload the\n        // huge quantised embedding as a temporary head only to replace it one line\n        // later; at 70B that wastes ~560 MiB of GPU memory on the host.\n        if (hasHead && !W.head) this.headEntry = up(W.embed);",
+    "untied head avoids duplicate embedding upload",
+  );
+  dense = replaceOnce(
+    dense,
     "    this.nKVBuf = this._buf(new Uint32Array([nKV]), GPUBufferUsage.UNIFORM);",
     "    this.nKVBuf = this._buf(new Uint32Array([nKV]), GPUBufferUsage.UNIFORM);\n    // FIELD STATION: fixed uniform storage for up to 64 rotary-pair factors\n    // (head_dim <= 128 for the currently supported Llama 3.x family). Pad\n    // unused values with 1.0 so original Llama 3 and Qwen remain identical.\n    const ropePairs = headDim / 2;\n    if (ropePairs > 64) throw new Error(`RoPE head dimension ${headDim} exceeds FIELD STATION factor capacity`);\n    const ropeFactors = new Float32Array(64).fill(1);\n    if (W.ropeFreqs?.data instanceof Float32Array) {\n      if (W.ropeFreqs.data.length !== ropePairs) throw new Error(`rope_freqs.weight has ${W.ropeFreqs.data.length} values; expected ${ropePairs}`);\n      ropeFactors.set(W.ropeFreqs.data);\n    }\n    this.ropeFreqBuf = this._buf(ropeFactors, GPUBufferUsage.UNIFORM);",
     "RoPE frequency-factor buffer",
