@@ -1,12 +1,10 @@
 // FIELD STATION room conversation helpers.
-// Conversation text stays in host memory. These helpers only assemble a rolling chat prompt;
-// they do not persist or transmit transcript content beyond the existing room chat flow.
+// Conversation text stays in host memory. These helpers assemble a rolling chat prompt;
+// source excerpts are injected for the current question only and are not persisted in history.
 
 export const FIELD_CONTEXT_RESERVE = 512;
 export const FIELD_LATEST_TURN_RESERVE = 256;
 
-// Backwards-compatible ChatML formatter for callers that have not moved onto the
-// architecture adapter yet. The live FIELD STATION room now supplies `chat` explicitly.
 function legacyChatRuntime(tok, vocab) {
   const imStart = vocab["<|im_start|>"];
   const imEnd = vocab["<|im_end|>"];
@@ -15,13 +13,10 @@ function legacyChatRuntime(tok, vocab) {
   const thinkEnd = vocab["</think>"];
   return {
     conversationPrefix() { return []; },
-    encodeMessage(role, content) {
-      return [imStart, ...tok.encode(`${role}\n${content ?? ""}`), imEnd, ...tok.encode("\n")];
-    },
+    encodeMessage(role, content) { return [imStart, ...tok.encode(`${role}\n${content ?? ""}`), imEnd, ...tok.encode("\n")]; },
     assistantPrefix() {
       const ids = [imStart, ...tok.encode("assistant\n")];
-      if (Number.isInteger(think) && Number.isInteger(thinkEnd))
-        ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
+      if (Number.isInteger(think) && Number.isInteger(thinkEnd)) ids.push(think, ...tok.encode("\n\n"), thinkEnd, ...tok.encode("\n\n"));
       return ids;
     },
   };
@@ -29,31 +24,30 @@ function legacyChatRuntime(tok, vocab) {
 
 /**
  * Build a coherent rolling prompt from complete previous user/assistant turns.
- * The immediately preceding turn gets priority so short follow-ups such as "continue"
- * remain meaningful. Older turns fall away first to retain useful answer room.
- *
- * `chat` is the architecture adapter's token-level conversation formatter. Keeping
- * context selection here but message representation in the adapter means Llama/Gemma
- * can retain exactly the same rolling-history policy without pretending to speak ChatML.
- * `conversationPrefix`, when present, is emitted exactly once for formats such as
- * Llama 3 that require one begin-of-text token for the whole conversation.
+ * `sourceContext`, when present, is a current-turn system message containing only
+ * the locally retrieved excerpts selected by the asker's browser. It deliberately
+ * does not enter `history`, so attached documents are not silently re-sent forever.
  */
-export function buildConversationPrompt({ tok, vocab, chat = null, history = [], currentText, maxSeq, minRoom = 32, reserve = FIELD_CONTEXT_RESERVE }) {
+export function buildConversationPrompt({
+  tok, vocab, chat = null, history = [], currentText, sourceContext = "",
+  maxSeq, minRoom = 32, reserve = FIELD_CONTEXT_RESERVE,
+}) {
   const format = chat || legacyChatRuntime(tok, vocab);
   if (typeof format.encodeMessage !== "function" || typeof format.assistantPrefix !== "function")
     throw new Error("model chat formatter is incomplete");
 
   const prefix = typeof format.conversationPrefix === "function" ? format.conversationPrefix() : [];
-  const current = [...format.encodeMessage("user", currentText), ...format.assistantPrefix()];
+  const sourceIds = sourceContext ? format.encodeMessage("system", sourceContext) : [];
+  const current = [...sourceIds, ...format.encodeMessage("user", currentText), ...format.assistantPrefix()];
   const hardPromptLimit = maxSeq - minRoom;
   if (prefix.length + current.length > hardPromptLimit) {
     const ids = [...prefix, ...current];
-    return { ids, usedTurns: 0, droppedTurns: history.length, reserveTokens: Math.max(0, maxSeq - ids.length) };
+    return {
+      ids, usedTurns: 0, droppedTurns: history.length,
+      reserveTokens: Math.max(0, maxSeq - ids.length), sourceTokens: sourceIds.length,
+    };
   }
 
-  // Normally reserve 512 tokens for the answer. For the immediately preceding turn, relax
-  // that to 256 tokens when necessary: preserving what the user is referring to is more useful
-  // than forgetting it merely to guarantee a longer response. Older history uses the full reserve.
   const baseLength = prefix.length + current.length;
   const preferredPromptLimit = Math.max(baseLength, maxSeq - Math.max(minRoom, reserve));
   const latestTurnLimit = Math.max(preferredPromptLimit, maxSeq - Math.max(minRoom, FIELD_LATEST_TURN_RESERVE));
@@ -79,6 +73,7 @@ export function buildConversationPrompt({ tok, vocab, chat = null, history = [],
     usedTurns,
     droppedTurns: Math.max(0, history.length - usedTurns),
     reserveTokens: maxSeq - promptLength,
+    sourceTokens: sourceIds.length,
   };
 }
 
