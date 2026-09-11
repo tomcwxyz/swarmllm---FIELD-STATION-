@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/field-station-entry.css">
 <link rel="stylesheet" href="/field-station-diagnostics.css">
 <link rel="stylesheet" href="/field-station-models.css">
+<link rel="stylesheet" href="/field-station-sources.css">
 <title>Collective compute · FIELD STATION</title>
 <script src="/vendor/peerjs.min.js"></script>
 </head>
@@ -36,17 +37,10 @@
     <div id="entry-type" class="fs-type">START · COLLECTIVE COMPUTE</div>
     <h1 id="entry-title"><span class="lo">Create a room and</span> invite other devices.</h1>
     <p id="entry-lede">A protected invitation link will be created automatically. Share that link with the other people or devices you want to include.</p>
-
-    <div class="join-fields">
-      <input id="name-input" aria-label="Device name" placeholder="Name this device — optional" maxlength="20" autocomplete="off">
-    </div>
-
-    <!-- SwarmLLM still uses an internal short label to derive its host identity. FIELD STATION
-         keeps both pieces hidden: people create or join with the protected invitation link. -->
+    <div class="join-fields"><input id="name-input" aria-label="Device name" placeholder="Name this device — optional" maxlength="20" autocomplete="off"></div>
     <input id="code-input" type="hidden" autocomplete="off">
     <input id="key-input" type="hidden" autocomplete="off">
     <input id="safety-check" type="checkbox" hidden>
-
     <div id="join-pledge">
       <span>GPU CONTRIBUTION</span>
       <button class="step" id="gb-minus" type="button" aria-label="Contribute less memory">−</button>
@@ -54,12 +48,10 @@
       <button class="step" id="gb-plus" type="button" aria-label="Contribute more memory">+</button>
       <span>GB</span>
     </div>
-
     <div class="entry-notice" role="note">
       <div class="fs-type">BEFORE YOU CONTINUE</div>
       <p><strong>This is an experiment, not a private AI service.</strong> Prompts are not confidential. Other participating devices help compute the answer and are not independently verified. Joining can use significant GPU, memory, bandwidth and battery.</p>
     </div>
-
     <div class="join-actions">
       <button id="create-btn" class="primary" type="button">I understand — create room →</button>
       <button id="join-btn" class="primary" type="button" hidden>I understand — join room →</button>
@@ -72,13 +64,8 @@
 <section id="room-screen">
   <aside id="side">
     <div class="side-k">Room</div>
-    <div id="side-room" title="Copy protected invitation link">
-      <div id="side-code">----</div>
-      <div class="side-hint">Select the room label to copy the protected invitation link.</div>
-    </div>
-
-    <div class="side-k">Participating devices</div>
-    <div id="peers"></div>
+    <div id="side-room" title="Copy protected invitation link"><div id="side-code">----</div><div class="side-hint">Select the room label to copy the protected invitation link.</div></div>
+    <div class="side-k">Participating devices</div><div id="peers"></div>
 
     <div id="ai-panel">
       <div class="side-k">Shared model</div>
@@ -86,6 +73,9 @@
         <span id="ai-title">MODEL / DISTRIBUTED</span>
         <select id="ai-model" aria-label="Model">
           <option value="qwen3-0.6b-q4">Qwen3 0.6B · Q4 · quick (~429 MB)</option>
+          <option value="llama32-1b-q4">Llama 3.2 1B · Q4 · experimental</option>
+          <option value="llama32-3b-q4">Llama 3.2 3B · Q4 · experimental</option>
+          <option value="llama3-8b-q4">Llama 3 8B · Q4 · experimental</option>
           <option value="qwen3-0.6b">Qwen3 0.6B · Q8 · quality (~639 MB)</option>
           <option value="qwen3-1.7b">Qwen3 1.7B · Q8</option>
           <option value="qwen3-4b">Qwen3 4B · Q8</option>
@@ -96,36 +86,20 @@
         <div id="model-preflight" hidden>
           <label for="model-url">GGUF URL</label>
           <input id="model-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://huggingface.co/…/resolve/…/model.gguf">
-          <div class="model-preflight-actions">
-            <button id="model-inspect" type="button">Inspect header →</button>
-            <button id="model-use" type="button" hidden>Use this model →</button>
-          </div>
+          <div class="model-preflight-actions"><button id="model-inspect" type="button">Inspect header →</button><button id="model-use" type="button" hidden>Use this model →</button></div>
           <div id="model-report" aria-live="polite"></div>
           <div class="model-preflight-note">Inspection reads the GGUF header/index only. A compatible model is not downloaded until you start it.</div>
         </div>
-        <div id="ai-need">
-          <div id="need-bar"><div id="need-fill"></div></div>
-          <div id="need-text">Measuring room capacity…</div>
-        </div>
+        <div id="ai-need"><div id="need-bar"><div id="need-fill"></div></div><div id="need-text">Measuring room capacity…</div></div>
         <span id="ai-status">Split across the participating devices</span>
         <button id="ai-start" type="button">Start model →</button>
       </div>
-
       <div id="host-controls" class="host-section" hidden>
         <label for="ai-visibility">Rendered chat visibility</label>
-        <select id="ai-visibility" class="host-select">
-          <option value="all">Everyone in the room</option>
-          <option value="host">Only this host screen</option>
-          <option value="asker">Only whoever asked</option>
-        </select>
+        <select id="ai-visibility" class="host-select"><option value="all">Everyone in the room</option><option value="host">Only this host screen</option><option value="asker">Only whoever asked</option></select>
         <div class="side-hint">Display only. Every device still participates in computation.</div>
       </div>
-
-      <div id="ai-loading" style="display:none">
-        <div id="ldg-title"></div>
-        <div id="ldg-bar"><div id="ldg-fill"></div></div>
-        <div id="ldg-sub"></div>
-      </div>
+      <div id="ai-loading" style="display:none"><div id="ldg-title"></div><div id="ldg-bar"><div id="ldg-fill"></div></div><div id="ldg-sub"></div></div>
     </div>
 
     <div id="context-line" class="side-hint">CONTEXT / new room conversation</div>
@@ -138,13 +112,22 @@
   <main id="chatpane">
     <div id="chat-log"></div>
     <div id="ai-empty">Connect enough devices, choose a model, then start the experiment.</div>
-    <div id="load-card">
-      <div class="lc-k">MODEL DISTRIBUTION / <span id="lc-model"></span></div>
-      <div id="lc-rows"></div>
-      <div class="lc-note">Each device fetches only the model layers assigned to it. Download rate and request count are shown while loading.</div>
-    </div>
+    <div id="load-card"><div class="lc-k">MODEL DISTRIBUTION / <span id="lc-model"></span></div><div id="lc-rows"></div><div class="lc-note">Each device fetches only the model layers assigned to it. Download rate and request count are shown while loading.</div></div>
     <div id="ai-output"></div>
+
+    <div id="sources-panel" hidden>
+      <div class="sources-head"><strong>Sources · local to this device</strong><span>TXT · MD · CSV · JSON</span></div>
+      <div id="sources-drop">
+        <div><strong>Add a local file</strong><div class="sources-note">The whole file stays in this browser. Only selected excerpts enter a question's model prompt.</div></div>
+        <button id="sources-add" type="button">Choose file →</button>
+      </div>
+      <input id="sources-input" type="file" accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown,text/csv,application/json" multiple hidden>
+      <div id="sources-list"></div>
+      <p class="sources-note"><strong>Not private once used:</strong> retrieved excerpts become part of the shared inference prompt. Do not attach sensitive material.</p>
+    </div>
+
     <div id="ai-row">
+      <button id="sources-toggle" type="button" aria-expanded="false">Sources<span id="sources-count"></span></button>
       <input id="ai-prompt" aria-label="Prompt" placeholder="Ask the collective model…" autocomplete="off">
       <button id="ai-send" type="button">Send →</button>
     </div>
@@ -155,6 +138,7 @@
 <script src="/field-station-shell.js"></script>
 <script src="/field-station-diagnostics.js"></script>
 <script type="module" src="/field-station-models.js"></script>
+<script type="module" src="/field-station-sources.js"></script>
 <script type="module" src="/field-station-room.js"></script>
 </body>
 </html>
