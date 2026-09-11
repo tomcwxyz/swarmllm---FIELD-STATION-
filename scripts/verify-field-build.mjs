@@ -98,6 +98,41 @@ export async function verifyFieldBuild(dist) {
   assert.deepEqual(retrieved.labels, ["brief.md"]);
   assert.ok(retrieved.chunks >= 1 && retrieved.chunks <= 2);
 
+  // CSV Sources are datasets, not prose documents. A vague request such as
+  // "analyse the source" must still receive whole-dataset structure/statistics,
+  // while a specific term can additionally retrieve matching rows.
+  const csvText = [
+    "organisation,amount,region,date,note",
+    'Alpha,10,North,2026-01-01,"first, quoted note"',
+    "Beta,30,South,2026-02-01,second",
+    "Alpha,20,North,2026-03-01,third",
+  ].join("\n");
+  const dataset = sources.profileCSV({ name: "sample.csv", text: csvText });
+  assert.equal(dataset.rowCount, 3);
+  assert.equal(dataset.columnCount, 5);
+  assert.equal(dataset.rows[0][4], "first, quoted note", "CSV parser must preserve quoted commas");
+  const amount = dataset.columns.find((c) => c.name === "amount");
+  assert.equal(amount.kind, "numeric");
+  assert.equal(amount.mean, 20);
+  const region = dataset.columns.find((c) => c.name === "region");
+  assert.equal(region.kind, "categorical");
+  assert.deepEqual(region.top[0], ["North", 2]);
+  const csvChunks = sources.chunkCSVRows(dataset, { rowsPerChunk: 2 });
+  const genericDatasetContext = sources.buildSourceContext(csvChunks, "Analyse the source I gave you", {
+    datasets: [dataset], maxChars: 2400, maxChunks: 2,
+  });
+  assert.match(genericDatasetContext.text, /you HAVE received/i);
+  assert.match(genericDatasetContext.text, /3 data rows · 5 columns/);
+  assert.match(genericDatasetContext.text, /amount: numeric; 0 missing; min 10, max 30, mean 20/);
+  assert.match(genericDatasetContext.text, /region: categorical; 0 missing; 2 distinct; common North \(2\)/);
+  assert.doesNotMatch(genericDatasetContext.text, /Row 1:/,
+    "generic dataset analysis should prefer whole-dataset profile over arbitrary first rows");
+  const targetedDatasetContext = sources.buildSourceContext(csvChunks, "What does the South row say?", {
+    datasets: [dataset], maxChars: 3000, maxChunks: 2,
+  });
+  assert.match(targetedDatasetContext.text, /matching rows/);
+  assert.match(targetedDatasetContext.text, /region=South/);
+
   const llama1 = catalogue.MODELS["llama32-1b-q4"];
   const llama3 = catalogue.MODELS["llama32-3b-q4"];
   const llama8 = catalogue.MODELS["llama3-8b-q4"];
@@ -110,6 +145,7 @@ export async function verifyFieldBuild(dist) {
   const ggufSource = await readFile(join(dist, "engine", "gguf.js"), "utf8");
   const roomSource = await readFile(join(dist, "room.js"), "utf8");
   const htmlSource = await readFile(join(dist, "field-room.html"), "utf8");
+  const sourceUi = await readFile(join(dist, "field-station-sources.js"), "utf8");
 
   assert.match(denseSource, /cu\[11\] = cfg\.rope_interleaved \? 1 : 0/);
   assert.match(denseSource, /this\.ropeFreqBuf = this\._buf\(ropeFactors, GPUBufferUsage\.UNIFORM\)/,
@@ -138,7 +174,7 @@ export async function verifyFieldBuild(dist) {
   assert.match(roomSource, /fieldStationSources\?\.contextFor/,
     "room runtime must retrieve Sources locally at question time");
   assert.match(roomSource, /sourceContext: sources\.text/,
-    "only selected source excerpts must enter prompt assembly");
+    "only selected source material must enter prompt assembly");
   assert.match(roomSource, /ai\.gpuFatal = gmsg/,
     "first WebGPU validation error must poison the current model instance");
   assert.match(roomSource, /if \(ai\.gpuFatal\) throw new Error\(`GPU validation failed:/,
@@ -146,6 +182,10 @@ export async function verifyFieldBuild(dist) {
   assert.match(roomSource, /maxStorageBindingMB/,
     "GPU diagnostics must record relevant adapter limits");
 
+  assert.match(sourceUi, /profileCSV/,
+    "CSV uploads must be profiled locally instead of treated as prose");
+  assert.match(sourceUi, /rowCount.*columns/,
+    "CSV Sources UI must surface dataset dimensions");
   assert.match(htmlSource, /id="sources-panel"/);
   assert.match(htmlSource, /field-station-sources\.js/);
   assert.match(htmlSource, /llama32-1b-q4/);
@@ -153,5 +193,5 @@ export async function verifyFieldBuild(dist) {
   await access(join(dist, "field-station-sources.js"));
   await access(join(dist, "field-station-sources.css"));
 
-  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, all RoPE bind paths, portable scaled-RoPE uniforms, GPU fail-fast guard, QuantFactory sources and local document Sources are present.");
+  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, all RoPE bind paths, portable scaled-RoPE uniforms, GPU fail-fast guard, dataset-aware CSV Sources, QuantFactory sources and local document Sources are present.");
 }
