@@ -204,9 +204,26 @@ export function selectSourceChunks(chunks, query, { maxChars = 2200, maxChunks =
   return picked;
 }
 
+function contextEnvelope(body) {
+  return `LOCAL SOURCE MATERIAL\nThe user has attached the local source material below and you HAVE received this material for the current question. Answer from it when relevant. For datasets, the profile describes the whole parsed dataset; matching rows are only examples and must not be treated as the whole dataset. Do not claim that no source or data was provided. Do not invent analysis that is not supported by the profile or rows.\n\n${body}`;
+}
+
 export function buildSourceContext(chunks, query, options = {}) {
   const maxChars = options.maxChars ?? 3000;
   const datasets = Array.isArray(options.datasets) ? options.datasets : [];
+
+  // Preserve the original document behaviour when no structured dataset is
+  // attached: all of the caller's source budget is available for excerpts.
+  if (!datasets.length) {
+    const selected = selectSourceChunks(chunks, query, { maxChars, maxChunks: options.maxChunks ?? 4 });
+    if (!selected.length) return { text: "", labels: [], chunks: 0 };
+    const labels = [...new Set(selected.map((c) => c.name))];
+    const excerpts = selected.map((c) => `[Source: ${c.name} · excerpt ${c.index + 1}]\n${c.text}`).join("\n\n");
+    return { text: contextEnvelope(excerpts), labels, chunks: selected.length };
+  }
+
+  // CSV datasets always contribute a compact whole-dataset profile. Row chunks
+  // are supplemental and only included when the question actually matches them.
   const datasetParts = [];
   let usedChars = 0;
   for (const dataset of datasets) {
@@ -217,18 +234,17 @@ export function buildSourceContext(chunks, query, options = {}) {
     datasetParts.push(part); usedChars += part.length + 2;
   }
 
-  const rowBudget = Math.max(0, maxChars - usedChars - 260);
+  const rowBudget = Math.max(0, maxChars - usedChars - 80);
   const selected = rowBudget > 200
-    ? selectSourceChunks(chunks, query, { maxChars: rowBudget, maxChunks: options.maxChunks ?? 3, requireMatch: datasetParts.length > 0 })
+    ? selectSourceChunks(chunks, query, { maxChars: rowBudget, maxChunks: options.maxChunks ?? 3, requireMatch: true })
     : [];
   if (!selected.length && !datasetParts.length) return { text: "", labels: [], chunks: 0 };
 
   const labels = [...new Set([...datasets.map((d) => d.name), ...selected.map((c) => c.name)])];
-  const excerpts = selected.map((c) => `[Source: ${c.name} · ${c.kind === "csv-rows" ? "matching rows" : `excerpt ${c.index + 1}`}]\n${c.text}`).join("\n\n");
-  const datasetText = datasetParts.join("\n\n");
-  const body = [datasetText, excerpts].filter(Boolean).join("\n\n");
+  const excerpts = selected.map((c) => `[Source: ${c.name} · matching rows]\n${c.text}`).join("\n\n");
+  const body = [datasetParts.join("\n\n"), excerpts].filter(Boolean).join("\n\n");
   return {
-    text: `LOCAL SOURCE MATERIAL\nThe user has attached the local source material below and you HAVE received this material for the current question. Answer from it when relevant. For datasets, the profile describes the whole parsed dataset; matching rows are only examples and must not be treated as the whole dataset. Do not claim that no source or data was provided. Do not invent analysis that is not supported by the profile or rows.\n\n${body}`.slice(0, maxChars + 520),
+    text: contextEnvelope(body),
     labels,
     chunks: selected.length + datasetParts.length,
   };
