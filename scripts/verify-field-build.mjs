@@ -116,8 +116,12 @@ export async function verifyFieldBuild(dist) {
     "DenseEngine must keep tiny RoPE factors in a portable uniform buffer");
   assert.match(denseSource, /new Float32Array\(64\)\.fill\(1\)/,
     "RoPE factor uniform must be fixed-size and identity padded");
-  assert.match(denseSource, /\[this\.q, this\.nHBuf, this\.ropeFreqBuf\]/,
-    "RoPE Q bind group must include frequency factors");
+  const ropeBindLines = denseSource.split("\n").filter((line) =>
+    line.includes("this.pipes.rope") && (line.includes("this._bg(") || line.includes("this._bg2res(")));
+  assert.equal(ropeBindLines.length, 4,
+    `expected exactly four DenseEngine RoPE bind-group constructions, found ${ropeBindLines.length}`);
+  for (const line of ropeBindLines) assert.match(line, /ropeFreqBuf/,
+    `every single-token and batched-prefill RoPE bind group must include frequency factors: ${line.trim()}`);
   assert.match(wgslSource, /struct RopeFactors \{ values: array<vec4<f32>, 16>, \}/,
     "WGSL must expose a fixed 256-byte uniform for frequency factors");
   assert.match(wgslSource, /var<uniform> rp_freq_factor: RopeFactors/,
@@ -149,5 +153,5 @@ export async function verifyFieldBuild(dist) {
   await access(join(dist, "field-station-sources.js"));
   await access(join(dist, "field-station-sources.css"));
 
-  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, portable scaled-RoPE uniforms, GPU fail-fast guard, QuantFactory sources and local document Sources are present.");
+  console.log("FIELD STATION build verification passed: Llama 3/3.2 adapters, all RoPE bind paths, portable scaled-RoPE uniforms, GPU fail-fast guard, QuantFactory sources and local document Sources are present.");
 }
