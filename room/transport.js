@@ -15,6 +15,13 @@ const HDR = 24;
 const MAGIC = 0x5357;                      // "SW"
 const KINDS = ["ai-hidden", "ai-hidden-b", "ai-hiddenret", "ai-hiddenret-b"];
 
+function telemetry(type, data = {}) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("field-station-telemetry", {
+    detail: { type, atPerf: performance.now(), ...data },
+  }));
+}
+
 // Per-link state: { chans: [RTCDataChannel], rr: number, rx: Map<msgId, {parts, got, n, meta}> }
 export function makeLink() { return { chans: [], rr: 0, rx: new Map(), nextId: 1, sent: 0, recv: 0 }; }
 
@@ -46,6 +53,7 @@ export function sendFrame(link, msg) {
   const nSlices = Math.max(1, Math.ceil(bytes.length / per));
   const id = link.nextId++ >>> 0;
   const pos = msg.t === "ai-hidden" || msg.t === "ai-hiddenret" ? msg.pos : msg.basePos;
+  let wireBytes = 0;
   for (let k = 0, off = 0; k < nSlices; k++) {
     const len = Math.min(per, bytes.length - off);
     const buf = new ArrayBuffer(HDR + len), dv = new DataView(buf);
@@ -54,10 +62,21 @@ export function sendFrame(link, msg) {
     dv.setUint16(14, k); dv.setUint16(16, nSlices); dv.setUint32(20, bytes.length);
     new Uint8Array(buf, HDR).set(bytes.subarray(off, off + len));
     off += len;
+    wireBytes += buf.byteLength;
     // round-robin over associations so a block never waits on one congestion window
     const ch = open[(link.rr++) % open.length];
     ch.send(buf);
   }
+  telemetry("transport:frame-send", {
+    kind: msg.t,
+    position: pos,
+    tokens: msg.n || 1,
+    speculative: !!msg.spec,
+    payloadBytes: bytes.length,
+    wireBytes,
+    slices: nSlices,
+    channels: open.length,
+  });
   return true;
 }
 
@@ -68,9 +87,15 @@ function receive(link, buf, onFrame) {
   const kind = dv.getUint8(2), spec = dv.getUint8(3), id = dv.getUint32(4), pos = dv.getUint32(8), n = dv.getUint16(12);
   const k = dv.getUint16(14), nSlices = dv.getUint16(16), total = dv.getUint32(20);
   let r = link.rx.get(id);
-  if (!r) { r = { parts: new Array(nSlices), got: 0, n: nSlices, buf: new Uint8Array(total), t: performance.now() }; link.rx.set(id, r); }
+  if (!r) {
+    r = {
+      parts: new Array(nSlices), got: 0, n: nSlices, buf: new Uint8Array(total),
+      t: performance.now(), wireBytes: 0,
+    };
+    link.rx.set(id, r);
+  }
   if (r.parts[k]) return;   // duplicate
-  r.parts[k] = true; r.got++;
+  r.parts[k] = true; r.got++; r.wireBytes += buf.byteLength;
   const per = SLICE_BYTES - HDR;
   r.buf.set(new Uint8Array(buf, HDR), k * per);
   if (r.got < r.n) return;
@@ -80,6 +105,16 @@ function receive(link, buf, onFrame) {
   const t = KINDS[kind];
   const msg = { t, enc: "f16", data, n, spec: spec ? 1 : 0 };
   if (t === "ai-hidden" || t === "ai-hiddenret") msg.pos = pos; else msg.basePos = pos;
+  telemetry("transport:frame-receive", {
+    kind: t,
+    position: pos,
+    tokens: n || 1,
+    speculative: !!spec,
+    payloadBytes: total,
+    wireBytes: r.wireBytes,
+    slices: nSlices,
+    assemblyMs: Number((performance.now() - r.t).toFixed(3)),
+  });
   onFrame(msg);
   // drop half-received frames older than 30 s so a lost slice cannot leak memory
   if (link.rx.size > 64) for (const [i, v] of link.rx) if (performance.now() - v.t > 30000) link.rx.delete(i);
