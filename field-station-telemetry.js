@@ -118,7 +118,7 @@ function patchSpecStep(proto) {
 
 function patchEngine(Engine) {
   const proto = Engine?.prototype;
-  if (!proto || proto[PATCHED]) return;
+  if (!proto || Object.prototype.hasOwnProperty.call(proto, PATCHED)) return;
   patchReset(proto);
   for (const method of [
     "runHidden",
@@ -130,7 +130,7 @@ function patchEngine(Engine) {
     "prefillTokens",
   ]) patchMethod(proto, method);
   patchSpecStep(proto);
-  proto[PATCHED] = true;
+  Object.defineProperty(proto, PATCHED, { value: true, configurable: true });
 }
 
 function classifyResource(name) {
