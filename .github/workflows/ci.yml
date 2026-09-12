@@ -13,7 +13,7 @@ jobs:
         with: { node-version: 22 }
       - name: Syntax check
         run: |
-          for f in engine/*.js tests/*.js benchmarks/*.js field-station/*.js field-station-room.js scripts/*.mjs; do node --check "$f"; done
+          for f in engine/*.js room/*.js tests/*.js benchmarks/*.js field-station/*.js field-station-room.js field-station-telemetry.js field-station-diagnostics.js scripts/*.mjs; do node --check "$f"; done
       - name: Unit tests (no GPU)
         run: deno test --allow-read tests/unit
       - name: Kernel generator sanity
