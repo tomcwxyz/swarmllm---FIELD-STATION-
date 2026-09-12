@@ -7,19 +7,42 @@
 // 5 KB = 153 ms, 20 KB = 254 ms (docs/bench-log.md). Slicing every send under four packets and
 // spreading a block across several associations brings a hop back to one one-way trip.
 //
-// Exact by construction: only the packaging of the bytes changes.
+// Exact by construction: only the packaging of the bytes changes. Bytes 18-19 in the frame header
+// are reserved for FIELD STATION's cumulative worker-time signal; older peers simply read them as
+// padding, so mixed-version rooms remain wire-compatible.
 
 export const WIRE_ID = 77;                 // negotiated channel id, same on both ends
 export const SLICE_BYTES = 4600;           // ~4 packets of 1150 B payload
 const HDR = 24;
 const MAGIC = 0x5357;                      // "SW"
 const KINDS = ["ai-hidden", "ai-hidden-b", "ai-hiddenret", "ai-hiddenret-b"];
+const flows = new Map();                   // family:position -> { receivedAt, upstreamWorkerMs }
 
 function telemetry(type, data = {}) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("field-station-telemetry", {
     detail: { type, atPerf: performance.now(), ...data },
   }));
+}
+
+function flowFamily(kind) {
+  return kind.endsWith("-b") ? "batch" : "single";
+}
+
+function flowKey(kind, position) {
+  return `${flowFamily(kind)}:${position}`;
+}
+
+function isReturnKind(kind) {
+  return kind === "ai-hiddenret" || kind === "ai-hiddenret-b";
+}
+
+function cumulativeWorkerMs(kind, position) {
+  const key = flowKey(kind, position);
+  const state = flows.get(key);
+  if (!state) return 0;
+  flows.delete(key);
+  return Math.max(0, Math.min(65535, Math.round(state.upstreamWorkerMs + performance.now() - state.receivedAt)));
 }
 
 // Per-link state: { chans: [RTCDataChannel], rr: number, rx: Map<msgId, {parts, got, n, meta}> }
@@ -53,13 +76,14 @@ export function sendFrame(link, msg) {
   const nSlices = Math.max(1, Math.ceil(bytes.length / per));
   const id = link.nextId++ >>> 0;
   const pos = msg.t === "ai-hidden" || msg.t === "ai-hiddenret" ? msg.pos : msg.basePos;
+  const workerMs = cumulativeWorkerMs(msg.t, pos);
   let wireBytes = 0;
   for (let k = 0, off = 0; k < nSlices; k++) {
     const len = Math.min(per, bytes.length - off);
     const buf = new ArrayBuffer(HDR + len), dv = new DataView(buf);
     dv.setUint16(0, MAGIC); dv.setUint8(2, kind); dv.setUint8(3, msg.spec ? 1 : 0);
     dv.setUint32(4, id); dv.setUint32(8, pos >>> 0); dv.setUint16(12, msg.n || 1);
-    dv.setUint16(14, k); dv.setUint16(16, nSlices); dv.setUint32(20, bytes.length);
+    dv.setUint16(14, k); dv.setUint16(16, nSlices); dv.setUint16(18, workerMs); dv.setUint32(20, bytes.length);
     new Uint8Array(buf, HDR).set(bytes.subarray(off, off + len));
     off += len;
     wireBytes += buf.byteLength;
@@ -76,6 +100,7 @@ export function sendFrame(link, msg) {
     wireBytes,
     slices: nSlices,
     channels: open.length,
+    cumulativeWorkerMs: workerMs,
   });
   return true;
 }
@@ -85,12 +110,12 @@ function receive(link, buf, onFrame) {
   const dv = new DataView(buf);
   if (dv.getUint16(0) !== MAGIC) return;
   const kind = dv.getUint8(2), spec = dv.getUint8(3), id = dv.getUint32(4), pos = dv.getUint32(8), n = dv.getUint16(12);
-  const k = dv.getUint16(14), nSlices = dv.getUint16(16), total = dv.getUint32(20);
+  const k = dv.getUint16(14), nSlices = dv.getUint16(16), workerMs = dv.getUint16(18), total = dv.getUint32(20);
   let r = link.rx.get(id);
   if (!r) {
     r = {
       parts: new Array(nSlices), got: 0, n: nSlices, buf: new Uint8Array(total),
-      t: performance.now(), wireBytes: 0,
+      t: performance.now(), wireBytes: 0, workerMs,
     };
     link.rx.set(id, r);
   }
@@ -105,6 +130,9 @@ function receive(link, buf, onFrame) {
   const t = KINDS[kind];
   const msg = { t, enc: "f16", data, n, spec: spec ? 1 : 0 };
   if (t === "ai-hidden" || t === "ai-hiddenret") msg.pos = pos; else msg.basePos = pos;
+  if (!isReturnKind(t)) {
+    flows.set(flowKey(t, pos), { receivedAt: performance.now(), upstreamWorkerMs: r.workerMs || 0 });
+  }
   telemetry("transport:frame-receive", {
     kind: t,
     position: pos,
@@ -114,6 +142,7 @@ function receive(link, buf, onFrame) {
     wireBytes: r.wireBytes,
     slices: nSlices,
     assemblyMs: Number((performance.now() - r.t).toFixed(3)),
+    cumulativeWorkerMs: r.workerMs || 0,
   });
   onFrame(msg);
   // drop half-received frames older than 30 s so a lost slice cannot leak memory
