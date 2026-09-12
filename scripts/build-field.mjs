@@ -25,7 +25,7 @@ if (peer.version !== "1.5.4") throw new Error(`Expected PeerJS 1.5.4, found ${pe
 for (const path of [
   "index.html", "field-room.html", "field-station-system.css", "field-station.css", "field-station-entry.css",
   "field-station-diagnostics.css", "field-station-models.css", "field-station-sources.css",
-  "field-station-shell.js", "field-station-diagnostics.js", "field-station-models.js", "field-station-sources.js", "field-station-room.js",
+  "field-station-shell.js", "field-station-diagnostics.js", "field-station-telemetry.js", "field-station-models.js", "field-station-sources.js", "field-station-room.js",
   "room.js", "engine", "room", "field-station", "favicon.svg", "apple-touch-icon.png",
 ]) await copy(path);
 

@@ -1,6 +1,7 @@
 (() => {
   const MAX_ENTRIES = 600;
   const MAX_RUNS = 250;
+  const MAX_PENDING_TELEMETRY = 500;
   const RUN_STORAGE_KEY = "field-station:experiment-runs:v1";
   const PRIVATE_KEY = /^(prompt|promptText|message|messages|reply|answer|response|content|contents|text)$/i;
   const PRIVATE_SUFFIX = /(prompt|message|reply|answer|response)(Text|Content)$/i;
@@ -10,14 +11,30 @@
   let experimentRuns = loadRuns();
   let activeRun = null;
   let lastStatus = "";
+  let pendingEngineRunAt = null;
+  let pendingTelemetry = [];
+  let batteryState = null;
+  let modelLoad = null;
+  let lastModelLoad = null;
+
+  const sessionTelemetry = {
+    engineExecutionMs: 0,
+    engineOperations: {},
+    transportWireBytesSent: 0,
+    transportWireBytesReceived: 0,
+    transportFramesSent: 0,
+    transportFramesReceived: 0,
+    modelResources: 0,
+    modelTransferBytes: 0,
+  };
 
   function safe(value, depth = 0) {
-    if (depth > 3) return "[depth]";
+    if (depth > 4) return "[depth]";
     if (value == null || ["string", "number", "boolean"].includes(typeof value)) return value;
-    if (Array.isArray(value)) return value.slice(0, 30).map((item) => safe(item, depth + 1));
+    if (Array.isArray(value)) return value.slice(0, 100).map((item) => safe(item, depth + 1));
     if (typeof value === "object") {
       const out = {};
-      for (const [key, val] of Object.entries(value).slice(0, 50)) {
+      for (const [key, val] of Object.entries(value).slice(0, 100)) {
         if (PRIVATE_KEY.test(key) || PRIVATE_SUFFIX.test(key)) continue;
         out[key] = safe(val, depth + 1);
       }
@@ -48,6 +65,26 @@
   function parseNumber(value) {
     const match = String(value || "").match(/-?\d+(?:\.\d+)?/);
     return match ? Number(match[0]) : null;
+  }
+
+  function round(value, places = 2) {
+    if (!Number.isFinite(value)) return null;
+    const scale = 10 ** places;
+    return Math.round(value * scale) / scale;
+  }
+
+  function percentile(values, p) {
+    const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+    if (!sorted.length) return null;
+    if (sorted.length === 1) return round(sorted[0], 3);
+    const index = (sorted.length - 1) * p;
+    const lo = Math.floor(index), hi = Math.ceil(index);
+    const value = lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (index - lo);
+    return round(value, 3);
+  }
+
+  function median(values) {
+    return percentile(values, 0.5);
   }
 
   function currentModel() {
@@ -83,42 +120,86 @@
 
     const summary = document.getElementById("cluster-summary")?.textContent || "";
     const match = summary.match(/(\d+)\s+devices?\s+·\s+(\d+)\s+WebGPU\s+·\s+([\d.]+)\s+GB pledged/i);
-    const rtts = devicesDetail.map((device) => device.rttMs).filter(Number.isFinite).sort((a, b) => a - b);
+    const rtts = devicesDetail.map((device) => device.rttMs).filter(Number.isFinite);
     const bandwidths = devicesDetail.map((device) => device.bandwidthMbps).filter(Number.isFinite);
 
     return {
       devices: match ? Number(match[1]) : devicesDetail.length || null,
       webgpuDevices: match ? Number(match[2]) : devicesDetail.filter((device) => device.gpu && !/no WebGPU/i.test(device.gpu)).length,
       pledgedGB: match ? Number(match[3]) : devicesDetail.reduce((sum, device) => sum + (device.contributionGB || 0), 0) || null,
-      medianRttMs: rtts.length ? rtts[Math.floor(rtts.length / 2)] : null,
+      medianRttMs: median(rtts),
       minBandwidthMbps: bandwidths.length ? Math.min(...bandwidths) : null,
       maxBandwidthMbps: bandwidths.length ? Math.max(...bandwidths) : null,
       devicesDetail,
     };
   }
 
-  function beginRun(promptTokens) {
+  function newRunTelemetry() {
+    return {
+      phase: "prefill",
+      engineExecutionMs: 0,
+      engineOperations: {},
+      engineTtftMs: null,
+      pipelineStarts: new Map(),
+      pipelineLapMs: [],
+      decodePipelineLapMs: [],
+      remoteWorkerMs: [],
+      decodeRemoteWorkerMs: [],
+      transport: {
+        sendWireBytes: 0,
+        receiveWireBytes: 0,
+        prefillWireBytes: 0,
+        decodeWireBytes: 0,
+        framesSent: 0,
+        framesReceived: 0,
+      },
+      spec: {
+        steps: 0,
+        accepted: 0,
+        drafts: 0,
+        returnedTokens: 0,
+        totalMs: 0,
+        depthCounts: {},
+      },
+    };
+  }
+
+  function beginRun(promptTokens = null, startedPerf = null) {
     const model = currentModel();
+    const cluster = clusterSnapshot();
     activeRun = {
       id: crypto.randomUUID?.() || `run-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       startedAt: new Date().toISOString(),
-      startedPerf: performance.now(),
-      promptTokens,
+      startedPerf: Number.isFinite(startedPerf) ? startedPerf : performance.now(),
+      promptTokens: Number.isFinite(promptTokens) ? promptTokens : null,
       modelKey: model.key,
       modelLabel: model.label,
       ...currentWire(),
-      clusterAtStart: clusterSnapshot(),
+      clusterAtStart: cluster,
+      batteryStart: batteryState ? { ...batteryState } : null,
+      modelLoad: lastModelLoad ? { ...lastModelLoad } : null,
       firstOutputObservedMs: null,
       lastObservedOutputTokens: 0,
       lastObservedTokensPerSecond: null,
+      telemetry: newRunTelemetry(),
     };
     record("experiment:run-start", {
       id: activeRun.id,
       modelKey: activeRun.modelKey,
-      promptTokens,
-      devices: activeRun.clusterAtStart.devices,
+      promptTokens: activeRun.promptTokens,
+      devices: cluster.devices,
       wire: activeRun.wire,
     });
+
+    const buffered = pendingTelemetry;
+    pendingTelemetry = [];
+    for (const detail of buffered) applyRunTelemetry(detail);
+  }
+
+  function ensureRun(promptTokens = null) {
+    if (!activeRun) beginRun(promptTokens, pendingEngineRunAt);
+    if (Number.isFinite(promptTokens)) activeRun.promptTokens = promptTokens;
+    return activeRun;
   }
 
   function saveRun(run) {
@@ -127,70 +208,177 @@
     persistRuns();
     record("experiment:run", run);
     activeRun = null;
+    pendingEngineRunAt = null;
+    pendingTelemetry = [];
+  }
+
+  function soloBaseline(modelKey) {
+    const candidates = experimentRuns.filter((run) =>
+      run.status === "complete" && run.modelKey === modelKey && run.devices === 1 && Number.isFinite(run.outputTokensPerSecond));
+    if (!candidates.length) return null;
+    return Math.max(...candidates.map((run) => run.outputTokensPerSecond));
+  }
+
+  function summariseTelemetry(run, devices, outputTokens) {
+    const t = run.telemetry;
+    const observedWireBytes = t.transport.sendWireBytes + t.transport.receiveWireBytes;
+    const decodeObservedWireBytes = t.transport.decodeWireBytes;
+    const clusterScale = devices > 1 ? devices / 2 : 0;
+    const estimatedClusterWireBytes = devices > 1 ? Math.round(observedWireBytes * clusterScale) : 0;
+    const estimatedDecodeWireBytes = devices > 1 ? Math.round(decodeObservedWireBytes * clusterScale) : 0;
+    const specAcceptance = t.spec.drafts > 0 ? round(t.spec.accepted / t.spec.drafts, 4) : null;
+    const weightedDepth = Object.entries(t.spec.depthCounts)
+      .reduce((sum, [depth, count]) => sum + Number(depth) * count, 0);
+
+    return {
+      engineTtftMs: t.engineTtftMs,
+      localEngineExecutionMs: round(t.engineExecutionMs, 3),
+      localEngineOperations: t.engineOperations,
+      pipelineLapP50Ms: percentile(t.pipelineLapMs, 0.5),
+      pipelineLapP95Ms: percentile(t.pipelineLapMs, 0.95),
+      decodePipelineLapP50Ms: percentile(t.decodePipelineLapMs, 0.5),
+      decodePipelineLapP95Ms: percentile(t.decodePipelineLapMs, 0.95),
+      remoteWorkerP50Ms: percentile(t.remoteWorkerMs, 0.5),
+      remoteWorkerP95Ms: percentile(t.remoteWorkerMs, 0.95),
+      decodeRemoteWorkerP50Ms: percentile(t.decodeRemoteWorkerMs, 0.5),
+      decodeRemoteWorkerP95Ms: percentile(t.decodeRemoteWorkerMs, 0.95),
+      hostWireBytes: observedWireBytes,
+      hostPrefillWireBytes: t.transport.prefillWireBytes,
+      hostDecodeWireBytes: decodeObservedWireBytes,
+      estimatedClusterWireBytes,
+      estimatedDecodeWireBytes,
+      estimatedDecodeWireBytesPerOutputToken: outputTokens > 0 ? round(estimatedDecodeWireBytes / outputTokens, 1) : null,
+      transportFramesSent: t.transport.framesSent,
+      transportFramesReceived: t.transport.framesReceived,
+      speculativeSteps: t.spec.steps,
+      speculativeAccepted: t.spec.accepted,
+      speculativeDrafts: t.spec.drafts,
+      speculativeAcceptanceRate: specAcceptance,
+      speculativeAverageDepth: t.spec.steps > 0 ? round(weightedDepth / t.spec.steps, 3) : null,
+      speculativeDepthCounts: t.spec.depthCounts,
+      speculativeStepMs: round(t.spec.totalMs, 3),
+    };
   }
 
   function completeRun({ prefillSeconds, outputTokens, outputTokensPerSecond, devices }) {
-    if (!activeRun) beginRun(null);
+    const run = ensureRun();
     const cluster = clusterSnapshot();
+    const actualDevices = devices || cluster.devices || run.clusterAtStart.devices || 1;
     const prefillMs = Number.isFinite(prefillSeconds) ? Math.round(prefillSeconds * 1000) : null;
+    const baselineTps = soloBaseline(run.modelKey);
+    const collectiveSpeedup = baselineTps && actualDevices > 1 ? round(outputTokensPerSecond / baselineTps, 4) : null;
+    const collectiveEfficiency = collectiveSpeedup != null ? round(collectiveSpeedup / actualDevices, 4) : null;
+    const deep = summariseTelemetry(run, actualDevices, outputTokens);
+    const batteryEnd = batteryState ? { ...batteryState } : null;
+    const batteryDropPct = run.batteryStart && batteryEnd && !run.batteryStart.charging && !batteryEnd.charging
+      ? round(Math.max(0, (run.batteryStart.level - batteryEnd.level) * 100), 3)
+      : null;
+
     saveRun({
-      id: activeRun.id,
-      startedAt: activeRun.startedAt,
+      id: run.id,
+      startedAt: run.startedAt,
       finishedAt: new Date().toISOString(),
       status: "complete",
-      modelKey: activeRun.modelKey,
-      modelLabel: activeRun.modelLabel,
-      promptTokens: activeRun.promptTokens,
+      modelKey: run.modelKey,
+      modelLabel: run.modelLabel,
+      promptTokens: run.promptTokens,
       outputTokens,
       prefillMs,
-      prefillTokensPerSecond: Number.isFinite(prefillSeconds) && prefillSeconds > 0 && Number.isFinite(activeRun.promptTokens)
-        ? Number((activeRun.promptTokens / prefillSeconds).toFixed(2))
+      prefillTokensPerSecond: Number.isFinite(prefillSeconds) && prefillSeconds > 0 && Number.isFinite(run.promptTokens)
+        ? round(run.promptTokens / prefillSeconds, 2)
         : null,
       decodeMs: Number.isFinite(outputTokensPerSecond) && outputTokensPerSecond > 0
         ? Math.round((outputTokens / outputTokensPerSecond) * 1000)
         : null,
       outputTokensPerSecond,
-      firstOutputObservedMs: activeRun.firstOutputObservedMs,
-      totalObservedMs: Math.round(performance.now() - activeRun.startedPerf),
-      devices: devices || cluster.devices || activeRun.clusterAtStart.devices,
+      firstOutputObservedMs: run.firstOutputObservedMs,
+      totalObservedMs: Math.round(performance.now() - run.startedPerf),
+      devices: actualDevices,
       webgpuDevices: cluster.webgpuDevices,
       pledgedGB: cluster.pledgedGB,
       medianRttMs: cluster.medianRttMs,
       minBandwidthMbps: cluster.minBandwidthMbps,
       maxBandwidthMbps: cluster.maxBandwidthMbps,
-      wire: activeRun.wire,
-      stripes: activeRun.stripes,
+      wire: run.wire,
+      stripes: run.stripes,
       hostDevice: cluster.devicesDetail.find((device) => device.self)?.gpu || null,
+      modelReadyMs: run.modelLoad?.readyMs ?? null,
+      modelResourceCount: run.modelLoad?.resourceCount ?? null,
+      modelTransferBytes: run.modelLoad?.transferBytes ?? null,
+      modelLikelyCacheResources: run.modelLoad?.likelyCacheResources ?? null,
+      soloBaselineTokensPerSecond: baselineTps,
+      collectiveSpeedup,
+      collectiveEfficiency,
+      batteryLevelStart: run.batteryStart?.level ?? null,
+      batteryLevelEnd: batteryEnd?.level ?? null,
+      batteryDropPct,
+      ...deep,
       cluster: cluster.devicesDetail,
     });
   }
 
+  function promptTokensFromError(error) {
+    const match = String(error || "").match(/prompt is\s+(\d+)\s+tokens/i);
+    return match ? Number(match[1]) : null;
+  }
+
   function failRun(error) {
-    if (!activeRun) return;
+    const run = ensureRun(promptTokensFromError(error));
     const cluster = clusterSnapshot();
+    const actualDevices = cluster.devices || run.clusterAtStart.devices || 1;
+    const deep = summariseTelemetry(run, actualDevices, run.lastObservedOutputTokens || 0);
     saveRun({
-      id: activeRun.id,
-      startedAt: activeRun.startedAt,
+      id: run.id,
+      startedAt: run.startedAt,
       finishedAt: new Date().toISOString(),
       status: "failed",
       error: String(error || "generation failed").slice(0, 240),
-      modelKey: activeRun.modelKey,
-      modelLabel: activeRun.modelLabel,
-      promptTokens: activeRun.promptTokens,
-      outputTokens: activeRun.lastObservedOutputTokens,
-      outputTokensPerSecond: activeRun.lastObservedTokensPerSecond,
-      totalObservedMs: Math.round(performance.now() - activeRun.startedPerf),
-      devices: cluster.devices || activeRun.clusterAtStart.devices,
+      modelKey: run.modelKey,
+      modelLabel: run.modelLabel,
+      promptTokens: run.promptTokens,
+      outputTokens: run.lastObservedOutputTokens,
+      outputTokensPerSecond: run.lastObservedTokensPerSecond,
+      totalObservedMs: Math.round(performance.now() - run.startedPerf),
+      devices: actualDevices,
       webgpuDevices: cluster.webgpuDevices,
       pledgedGB: cluster.pledgedGB,
       medianRttMs: cluster.medianRttMs,
       minBandwidthMbps: cluster.minBandwidthMbps,
       maxBandwidthMbps: cluster.maxBandwidthMbps,
-      wire: activeRun.wire,
-      stripes: activeRun.stripes,
+      wire: run.wire,
+      stripes: run.stripes,
       hostDevice: cluster.devicesDetail.find((device) => device.self)?.gpu || null,
+      modelReadyMs: run.modelLoad?.readyMs ?? null,
+      ...deep,
       cluster: cluster.devicesDetail,
     });
+  }
+
+  function maybeStartModelLoad(status) {
+    if (modelLoad) return;
+    if (!/(reading model index|requesting GPU|downloading layers|building GPU pipelines|starting\s+)/i.test(status)) return;
+    const model = currentModel();
+    modelLoad = {
+      modelKey: model.key,
+      startedPerf: performance.now(),
+      resourceCount: 0,
+      transferBytes: 0,
+      likelyCacheResources: 0,
+    };
+  }
+
+  function maybeFinishModelLoad(status) {
+    if (!modelLoad) return;
+    if (!/(cluster online|solo:.*ready|layers\s+\d+.*ready)/i.test(status)) return;
+    lastModelLoad = {
+      modelKey: modelLoad.modelKey,
+      readyMs: Math.round(performance.now() - modelLoad.startedPerf),
+      resourceCount: modelLoad.resourceCount,
+      transferBytes: modelLoad.transferBytes || null,
+      likelyCacheResources: modelLoad.likelyCacheResources,
+    };
+    record("model:ready", lastModelLoad);
+    modelLoad = null;
   }
 
   function observeAiStatus() {
@@ -200,20 +388,24 @@
       const value = status.textContent?.trim() || "";
       if (!value || value === lastStatus) return;
       lastStatus = value;
+      maybeStartModelLoad(value);
+      maybeFinishModelLoad(value);
 
       const prefill = value.match(/^prefill:\s*(\d+)\s+tokens/i);
       if (prefill) {
-        if (activeRun) failRun("superseded by a new generation");
-        beginRun(Number(prefill[1]));
+        const promptTokens = Number(prefill[1]);
+        if (!activeRun) beginRun(promptTokens, pendingEngineRunAt);
+        else activeRun.promptTokens = promptTokens;
         return;
       }
 
       const generating = value.match(/^generating…?\s*(\d+)\s+tok\s*·\s*([\d.]+)\s+tok\/s/i);
       if (generating) {
-        if (!activeRun) beginRun(null);
-        if (activeRun.firstOutputObservedMs == null) activeRun.firstOutputObservedMs = Math.round(performance.now() - activeRun.startedPerf);
-        activeRun.lastObservedOutputTokens = Number(generating[1]);
-        activeRun.lastObservedTokensPerSecond = Number(generating[2]);
+        const run = ensureRun();
+        if (run.firstOutputObservedMs == null) run.firstOutputObservedMs = Math.round(performance.now() - run.startedPerf);
+        run.lastObservedOutputTokens = Number(generating[1]);
+        run.lastObservedTokensPerSecond = Number(generating[2]);
+        run.telemetry.phase = "decode";
         return;
       }
 
@@ -235,6 +427,132 @@
     inspect();
   }
 
+  function applySessionTelemetry(detail) {
+    if (detail.type === "engine:operation") {
+      sessionTelemetry.engineExecutionMs += Number(detail.ms || 0);
+      const op = sessionTelemetry.engineOperations[detail.operation] || { calls: 0, ms: 0, tokens: 0 };
+      op.calls++;
+      op.ms = round(op.ms + Number(detail.ms || 0), 3);
+      op.tokens += Number(detail.tokens || 0);
+      sessionTelemetry.engineOperations[detail.operation] = op;
+    } else if (detail.type === "transport:frame-send") {
+      sessionTelemetry.transportFramesSent++;
+      sessionTelemetry.transportWireBytesSent += Number(detail.wireBytes || 0);
+    } else if (detail.type === "transport:frame-receive") {
+      sessionTelemetry.transportFramesReceived++;
+      sessionTelemetry.transportWireBytesReceived += Number(detail.wireBytes || 0);
+    } else if (detail.type === "model:resource") {
+      sessionTelemetry.modelResources++;
+      sessionTelemetry.modelTransferBytes += Number(detail.transferBytes || 0);
+    }
+  }
+
+  function applyRunTelemetry(detail) {
+    if (!activeRun) return;
+    const t = activeRun.telemetry;
+
+    if (detail.type === "engine:operation") {
+      t.engineExecutionMs += Number(detail.ms || 0);
+      const op = t.engineOperations[detail.operation] || { calls: 0, ms: 0, tokens: 0 };
+      op.calls++;
+      op.ms = round(op.ms + Number(detail.ms || 0), 3);
+      op.tokens += Number(detail.tokens || 0);
+      t.engineOperations[detail.operation] = op;
+      return;
+    }
+
+    if (detail.type === "engine:ttft") {
+      t.engineTtftMs = Number(detail.ms || 0);
+      t.phase = "decode";
+      return;
+    }
+
+    if (detail.type === "engine:spec-step") {
+      t.spec.steps++;
+      t.spec.accepted += Number(detail.accepted || 0);
+      t.spec.drafts += Number(detail.drafts || 0);
+      t.spec.returnedTokens += Number(detail.returnedTokens || 0);
+      t.spec.totalMs += Number(detail.ms || 0);
+      if (Number.isFinite(detail.requestedDepth)) {
+        t.spec.depthCounts[detail.requestedDepth] = (t.spec.depthCounts[detail.requestedDepth] || 0) + 1;
+      }
+      return;
+    }
+
+    if (detail.type === "transport:frame-send" || detail.type === "transport:frame-receive") {
+      const bytes = Number(detail.wireBytes || 0);
+      const isSend = detail.type === "transport:frame-send";
+      if (isSend) {
+        t.transport.sendWireBytes += bytes;
+        t.transport.framesSent++;
+      } else {
+        t.transport.receiveWireBytes += bytes;
+        t.transport.framesReceived++;
+      }
+      if (t.phase === "decode") t.transport.decodeWireBytes += bytes;
+      else t.transport.prefillWireBytes += bytes;
+
+      const family = String(detail.kind || "").endsWith("-b") ? "batch" : "single";
+      const key = `${family}:${detail.position}`;
+      if (isSend && (detail.kind === "ai-hidden" || detail.kind === "ai-hidden-b")) {
+        t.pipelineStarts.set(key, { atPerf: detail.atPerf, phase: t.phase });
+      } else if (!isSend && (detail.kind === "ai-hiddenret" || detail.kind === "ai-hiddenret-b")) {
+        const start = t.pipelineStarts.get(key);
+        if (start) {
+          const lap = detail.atPerf - start.atPerf;
+          t.pipelineLapMs.push(lap);
+          if (start.phase === "decode") t.decodePipelineLapMs.push(lap);
+          t.pipelineStarts.delete(key);
+        }
+        if (Number.isFinite(detail.cumulativeWorkerMs) && detail.cumulativeWorkerMs > 0) {
+          t.remoteWorkerMs.push(detail.cumulativeWorkerMs);
+          if (t.phase === "decode") t.decodeRemoteWorkerMs.push(detail.cumulativeWorkerMs);
+        }
+      }
+    }
+  }
+
+  function onTelemetry(event) {
+    const detail = event.detail || {};
+    if (!detail.type) return;
+
+    if (detail.type === "device:battery") {
+      batteryState = {
+        level: Number.isFinite(detail.level) ? detail.level : null,
+        charging: !!detail.charging,
+      };
+      return;
+    }
+
+    if (detail.type === "model:resource") {
+      if (modelLoad) {
+        modelLoad.resourceCount++;
+        modelLoad.transferBytes += Number(detail.transferBytes || 0);
+        if (detail.cacheSignal === "likely-cache-or-revalidated") modelLoad.likelyCacheResources++;
+      }
+      applySessionTelemetry(detail);
+      return;
+    }
+
+    if (detail.type === "telemetry:ready") {
+      record("telemetry:ready", { version: detail.version });
+      return;
+    }
+
+    if (detail.type === "engine:run-start") {
+      pendingEngineRunAt = Number.isFinite(detail.atPerf) ? detail.atPerf : performance.now();
+      pendingTelemetry = [];
+      return;
+    }
+
+    applySessionTelemetry(detail);
+    if (activeRun) applyRunTelemetry(detail);
+    else if (pendingEngineRunAt != null) {
+      pendingTelemetry.push(detail);
+      if (pendingTelemetry.length > MAX_PENDING_TELEMETRY) pendingTelemetry.shift();
+    }
+  }
+
   function snapshot() {
     return {
       fieldStation: "collective-compute",
@@ -242,6 +560,12 @@
       page: location.origin + location.pathname,
       userAgent: navigator.userAgent,
       online: navigator.onLine,
+      battery: batteryState,
+      localDeviceTelemetry: {
+        ...sessionTelemetry,
+        engineExecutionMs: round(sessionTelemetry.engineExecutionMs, 3),
+      },
+      latestModelLoad: lastModelLoad,
       experimentRuns: [...experimentRuns],
       entries: [...entries],
     };
@@ -257,11 +581,6 @@
     }
   }
 
-  function downloadJson() {
-    downloadBlob(JSON.stringify(snapshot(), null, 2), "application/json", `field-station-diagnostics-${timestamp()}.json`);
-    record("diagnostics:exported", { entries: entries.length, runs: experimentRuns.length });
-  }
-
   function timestamp() {
     return new Date().toISOString().replaceAll(":", "-");
   }
@@ -275,9 +594,14 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function downloadJson() {
+    downloadBlob(JSON.stringify(snapshot(), null, 2), "application/json", `field-station-diagnostics-${timestamp()}.json`);
+    record("diagnostics:exported", { entries: entries.length, runs: experimentRuns.length });
+  }
+
   function csvCell(value) {
     if (value == null) return "";
-    const string = String(value);
+    const string = typeof value === "object" ? JSON.stringify(value) : String(value);
     return /[",\n]/.test(string) ? `"${string.replaceAll('"', '""')}"` : string;
   }
 
@@ -285,8 +609,17 @@
     const fields = [
       "startedAt", "status", "modelKey", "modelLabel", "promptTokens", "outputTokens",
       "prefillMs", "prefillTokensPerSecond", "decodeMs", "outputTokensPerSecond",
-      "firstOutputObservedMs", "totalObservedMs", "devices", "webgpuDevices", "pledgedGB",
-      "medianRttMs", "minBandwidthMbps", "maxBandwidthMbps", "wire", "stripes", "hostDevice", "error",
+      "engineTtftMs", "firstOutputObservedMs", "totalObservedMs", "devices", "webgpuDevices", "pledgedGB",
+      "medianRttMs", "minBandwidthMbps", "maxBandwidthMbps", "wire", "stripes", "hostDevice",
+      "modelReadyMs", "modelResourceCount", "modelTransferBytes", "modelLikelyCacheResources",
+      "pipelineLapP50Ms", "pipelineLapP95Ms", "decodePipelineLapP50Ms", "decodePipelineLapP95Ms",
+      "remoteWorkerP50Ms", "remoteWorkerP95Ms", "decodeRemoteWorkerP50Ms", "decodeRemoteWorkerP95Ms",
+      "hostWireBytes", "hostPrefillWireBytes", "hostDecodeWireBytes", "estimatedClusterWireBytes",
+      "estimatedDecodeWireBytes", "estimatedDecodeWireBytesPerOutputToken",
+      "speculativeSteps", "speculativeAccepted", "speculativeDrafts", "speculativeAcceptanceRate",
+      "speculativeAverageDepth", "speculativeDepthCounts", "localEngineExecutionMs",
+      "soloBaselineTokensPerSecond", "collectiveSpeedup", "collectiveEfficiency",
+      "batteryLevelStart", "batteryLevelEnd", "batteryDropPct", "error",
     ];
     const rows = [fields.join(","), ...experimentRuns.map((run) => fields.map((field) => csvCell(run[field])).join(","))];
     downloadBlob(rows.join("\n"), "text/csv;charset=utf-8", `field-station-runs-${timestamp()}.csv`);
@@ -309,7 +642,7 @@
         <div><div class="fs-type">APPARATUS · EXPERIMENT LOG</div><h2>What is the room doing?</h2></div>
         <button type="button" class="diag-close" aria-label="Close diagnostics">Close</button>
       </div>
-      <p class="diag-note">Run metrics are kept in this browser so experiments can be compared later. Prompt and answer text are deliberately excluded.</p>
+      <p class="diag-note">Run metrics are kept in this browser so experiments can be compared later. Prompt and answer text are deliberately excluded. Battery change is recorded only where the browser exposes it and is not treated as an energy measurement.</p>
       <div class="diag-run-summary" aria-live="polite"></div>
       <div class="diag-actions">
         <button type="button" data-diag-runs-csv>Export runs CSV</button>
@@ -334,10 +667,13 @@
   function runLine(run) {
     const when = run.startedAt ? new Date(run.startedAt).toLocaleString() : "unknown time";
     const model = run.modelLabel || run.modelKey || "model";
-    const result = run.status === "complete"
-      ? `${run.outputTokens ?? "?"} tok · ${run.outputTokensPerSecond ?? "?"} tok/s · prefill ${run.prefillMs ?? "?"} ms`
-      : `failed${run.error ? ` · ${run.error}` : ""}`;
-    return `${when}  ${model}  ${run.devices || "?"} device${run.devices === 1 ? "" : "s"}  ${result}`;
+    if (run.status !== "complete") return `${when}  ${model}  failed${run.error ? ` · ${run.error}` : ""}`;
+    const deeper = [
+      Number.isFinite(run.engineTtftMs) ? `TTFT ${Math.round(run.engineTtftMs)} ms` : null,
+      Number.isFinite(run.decodePipelineLapP95Ms) ? `lap p95 ${Math.round(run.decodePipelineLapP95Ms)} ms` : null,
+      Number.isFinite(run.collectiveEfficiency) ? `collective ${(run.collectiveEfficiency * 100).toFixed(0)}%` : null,
+    ].filter(Boolean).join(" · ");
+    return `${when}  ${model}  ${run.devices || "?"} device${run.devices === 1 ? "" : "s"}  ${run.outputTokens ?? "?"} tok · ${run.outputTokensPerSecond ?? "?"} tok/s${deeper ? ` · ${deeper}` : ""}`;
   }
 
   function render() {
@@ -376,6 +712,7 @@
     open,
   };
 
+  window.addEventListener("field-station-telemetry", onTelemetry);
   window.addEventListener("error", (event) => record("browser:error", {
     name: event.error?.name || "Error",
     error: event.error?.message || event.message || "unknown error",
@@ -383,9 +720,11 @@
     line: event.lineno || null,
     column: event.colno || null,
   }));
-  window.addEventListener("unhandledrejection", (event) => record("browser:rejection", {
-    error: event.reason?.message || String(event.reason || "unknown rejection"),
-  }));
+  window.addEventListener("unhandledrejection", (event) => {
+    const error = event.reason?.message || String(event.reason || "unknown rejection");
+    record("browser:rejection", { error });
+    if (pendingEngineRunAt != null && !activeRun) failRun(error);
+  });
   window.addEventListener("online", () => record("network:online"));
   window.addEventListener("offline", () => record("network:offline"));
   document.addEventListener("visibilitychange", () => record("page:visibility", { state: document.visibilityState }));
