@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/field-station.css">
 <link rel="stylesheet" href="/field-station-entry.css">
 <link rel="stylesheet" href="/field-station-diagnostics.css">
+<link rel="stylesheet" href="/field-station-contribution.css">
 <link rel="stylesheet" href="/field-station-models.css">
 <link rel="stylesheet" href="/field-station-sources.css">
 <title>Shared AI · a FIELD STATION experiment</title>
@@ -102,6 +103,33 @@
       <div id="ai-loading" style="display:none"><div id="ldg-title"></div><div id="ldg-bar"><div id="ldg-fill"></div></div><div id="ldg-sub"></div></div>
     </div>
 
+    <section id="contribution-panel" aria-labelledby="contribution-title" data-activity="connected">
+      <div class="contrib-head">
+        <span id="contribution-title" class="contrib-title">Your contribution</span>
+        <span id="contrib-activity" class="contrib-status" aria-live="polite">connected</span>
+      </div>
+      <p class="contrib-lede">This device is one part of the shared model.</p>
+      <div class="contrib-model-line">
+        <div id="contrib-model" class="contrib-model-name">Shared model</div>
+        <div id="contrib-layers" class="contrib-layer-copy">Waiting for model</div>
+      </div>
+      <div class="contrib-grid">
+        <div class="contrib-metric"><span class="contrib-k">GPU offered</span><span id="contrib-memory" class="contrib-v">—</span></div>
+        <div class="contrib-metric"><span class="contrib-k">Compute completed</span><span id="contrib-compute" class="contrib-v">—</span></div>
+        <div class="contrib-metric"><span class="contrib-k">Data exchanged</span><span id="contrib-data" class="contrib-v">—</span><span id="contrib-data-detail" class="contrib-detail">activation traffic</span></div>
+        <div class="contrib-metric"><span class="contrib-k">Tokens processed</span><span id="contrib-tokens" class="contrib-v">—</span></div>
+        <div class="contrib-metric"><span class="contrib-k">Model data loaded</span><span id="contrib-model-data" class="contrib-v">—</span></div>
+        <div id="contrib-battery-row" class="contrib-metric" hidden><span class="contrib-k">Battery</span><span id="contrib-battery" class="contrib-v">—</span></div>
+      </div>
+      <div class="contrib-together">
+        <span class="contrib-k">Together</span>
+        <strong id="contrib-together">Waiting for other devices</strong>
+        <div id="contrib-path" class="contrib-path">This device</div>
+      </div>
+      <div id="contrib-last-answer" class="contrib-last-answer" hidden></div>
+      <p class="contrib-note">Measured in this browser. Compute time is model-operation time; data is activation traffic over the FIELD STATION wire. Battery appears only when the browser reports it. Hardware temperature and true GPU utilisation are not available to the page.</p>
+    </section>
+
     <div id="context-line" class="side-hint">CONTEXT / new room conversation</div>
     <div id="awake" class="side-hint"></div>
     <div id="cache-line" class="side-hint"><a href="#" id="cache-clear">Clear cached model weights</a></div>
@@ -138,6 +166,7 @@
 <script src="/field-station-shell.js"></script>
 <script src="/field-station-diagnostics.js"></script>
 <script type="module" src="/field-station-telemetry.js"></script>
+<script type="module" src="/field-station/contribution.js"></script>
 <script type="module" src="/field-station-models.js"></script>
 <script type="module" src="/field-station-sources.js"></script>
 <script type="module" src="/field-station-room.js"></script>
